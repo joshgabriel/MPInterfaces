@@ -1,0 +1,11 @@
+comment :   pymatgen generated KPOINTS with grid density = 1000 / atom 
+coord_type : None
+generation_style :  Gamma
+kpoints : [[8, 13, 1]]
+kpts_weights : None
+labels : None
+nkpoints : 0
+tet_connections : None
+tet_number : 0
+tet_weight : 0
+usershift : [0, 0, 0]

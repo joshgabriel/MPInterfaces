@@ -1,0 +1,32 @@
+NAME: 'My_Project'
+
+Incar_General: 'incar_vdw.yaml'
+
+Kpoints_General: 'relax_kpoints.yaml'
+
+Potcar_Spec: 'potcar_symbols.yaml'
+
+Insilico_Fab:
+ - Creator: 
+ - Script: 
+
+Workflow:
+ Relax: 
+  - 
+ 
+ HSE_prep:
+  - 
+
+ HSE:
+  - 
+
+ AFM:
+  - 
+
+ U_calib:
+  - 
+
+ MAE:
+  - 
+
+
