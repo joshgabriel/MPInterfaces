@@ -4,13 +4,13 @@ from __future__ import division, unicode_literals, print_function, \
     absolute_import
 
 """
-This script serves as a management tool for vasp projects, starting 
-from encut, kpoint or other parameter optimization of till the slab 
-solvation. Just define all types of calculations with their 
-corresponding specifications needed for the project in a yaml file 
+This script serves as a management tool for vasp projects, starting
+from encut, kpoint or other parameter optimization of till the slab
+solvation. Just define all types of calculations with their
+corresponding specifications needed for the project in a yaml file
 and run or rerun calculaitons as required.
 
-Note: use your own materials project key to download the required 
+Note: use your own materials project key to download the required
 structure
 """
 
@@ -189,6 +189,41 @@ class mpint(object):
                 shutil.copy(wavecar_file,
                             self.cal_job_dir + os.sep + 'WAVECAR')
 
+    def dev_process_input(self, args):
+        update = {}
+        if args.command == 'make_project':
+           # check if any input spec for the project 
+           if args.input:
+              f = open(args.input)
+              project_spec = yaml.load(f)
+              self.name = project_spec.get('NAME')
+              self.configs = project_spec.get('Config')
+              # set 
+              incar = project_spec.get('INCAR_General')
+              kpoints = project_spec.get('KPOINTS_General')
+              
+              self.kpoints_general = project_spec.get('KPOINTS_General')
+              os.mkdir(self.name)
+           else:
+              pass 
+        elif args.command == 'archive_project':
+           # check for  input project spec
+           if args.input:
+              print ('will archive all json files into a csv file or follow tags')
+
+        elif args.command == 'analyze_project':
+           # check for yaml analysis input for project
+           if args.input:
+              print ('will analyze the project according to some specified post processing script')
+
+        elif args.command == 'run_project':
+           # check for workflow.yaml input file 
+           if args.input:
+              print ('will read in a workflow, perform InSilico creations and will write and launch a daemon script')
+              
+           
+        
+
     def process_input(self, args):
         update = {}
         kptlist = []
@@ -248,6 +283,7 @@ class mpint(object):
                         self.turn_knobs.update({key: paramlist})
 
     def get_cal(self, args):
+        #self.dev_process_input(args)
         self.process_input(args)
         cal = None
         if self.turn_knobs.get('VACUUM') or self.turn_knobs.get('THICKNESS'):
@@ -325,30 +361,36 @@ class mpint(object):
 
     def main(self):
         m_description = """
-Management tool for vasp projects, starting from 
+Management tool for vasp projects, starting from
 encut, kpoint or other parameter optimization of till the slab solvation.
 
 it takes 3 arguments: input yaml file, type of calculation and the run mode
 example:
    mpint -i naf.yaml -t bulk_calibrate run
-this will read in the specifications for 'bulk_calibrate' job from the 
+this will read in the specifications for 'bulk_calibrate' job from the
 input yaml file, naf.yaml, and runs the job i.e submits to the que.
 
 run modes supported:
   1. run : submits job to the que
 
-Everytime jobs are submitted or its sttaus queried, information such as job ids, 
+Everytime jobs are submitted or its sttaus queried, information such as job ids,
 job folders etc are written to the log file 'mpint.log'. This makes it easier to
 identify job ids and their corresponding to job folders.
- 
-Note: use your own materials project key to download the required 
+
+Note: use your own materials project key to download the required
 structure
 
-Note: this script submits jobs only to the PBS ques such as hipergator 
+Note: this script submits jobs only to the PBS ques such as hipergator
 """
         parser = ArgumentParser(description=m_description)
+        #parser.add_argument('-c', '--command', help="command to execute")
+        #parser.add_argument('-w', '--workflow', help="workflow input yaml file")
+
         parser.add_argument('-i', '--input', help="yaml input file")
         parser.add_argument('-t', '--type', help="type of calculation")
+
+        #parser.add_argument('-c', '--command', help="command to execute")
+        #parser.add_argument('-w', '--workflow', help="workflow input yaml file")
 
         subparsers = parser.add_subparsers(help='command', dest='command')
 

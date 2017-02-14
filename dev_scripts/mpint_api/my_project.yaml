@@ -7,26 +7,21 @@ Kpoints_General: 'relax_kpoints.yaml'
 Potcar_Spec: 'potcar_symbols.yaml'
 
 Insilico_Fab:
- - Creator: 
- - Script: 
+  Creator: 
+  Script: 
 
 Workflow:
- Relax: 
-  - 
- 
- HSE_prep:
-  - 
+  Relax: 
+    
+  HSE_prep: 
 
- HSE:
-  - 
+  HSE:
 
- AFM:
-  - 
+  AFM:
 
- U_calib:
-  - 
+  U_calib:
 
- MAE:
-  - 
+  MAE:
+
 
 
