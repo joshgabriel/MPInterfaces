@@ -1,0 +1,10 @@
+account: null
+email: null
+job_name: my_job
+mem: null
+nodes: 1
+ntasks: 16
+walltime: '10:00:00'
+pre_rocket: null
+rocket_launch: null
+

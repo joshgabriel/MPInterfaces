@@ -1,7 +1,11 @@
+.. image:: https://travis-ci.org/henniggroup/MPInterfaces.svg?branch=master
+.. image:: https://codecov.io/gh/henniggroup/MPInterfaces/coverage.svg?branch=master
+
 MPinterfaces is a python package that enables high throughput Density
-Functional Theory(DFT) analysis of arbitrary material interfaces(ligand capped
-nanoparticles, surfaces in the presence of solvents and hetero-structure
-interfaces) using VASP_, VASPsol_, LAMMPS_, materialsproject_ database
+Functional Theory(DFT) analysis of arbitrary material interfaces(two dimensional
+materials, hetero-structure, ligand capped
+nanoparticles and surfaces in the presence of solvents) using
+VASP_, VASPsol_, LAMMPS_, materialsproject_ database
 as well as their open source tools_ and a little bit of ase_.
 
 .. _materialsproject: https://github.com/materialsproject
@@ -16,51 +20,19 @@ as well as their open source tools_ and a little bit of ase_.
 
 .. _ase: https://wiki.fysik.dtu.dk/ase/
 
+.. image:: https://github.com/henniggroup/MPInterfaces/blob/master/docs/mpinterfaces-logo.png
+   :width: 75 %
+   :align: center
 
 Installation
 ==============
 
-The following steps applies only to linux and OSX(with xcode) operating systems.
-
-Prepping
+Install Pymatgen
 -------------
 
-1. Make sure that you are using python>=2.7 (do a "python --version").
+See http://pymatgen.org/#getting-pymatgen
 
-NOTE: for hpg2 users refer to ufhpc_readme.md in the docs and follow it for installation 
-
-2. it is highly recommended that you use gcc compiler. So type::
-
-   export CC=gcc
-
-   Note: *Skip this step if the already available numpy/scipy packages
-   were setup using intel MKL or if you are using Clang compiler suite
-   on OSX*
-
-3. Unless you have admin privilege on the machine you are installing, it is
-   better to install this package and all its dependencies in a virtual environment.
-
-   - get the latest version from https://pypi.python.org/pypi/virtualenv#downloads
-   
-   - tar xvfz virtualenv-X.X.X.tar.gz
-   
-   - cd virtualenv-X.X.X
-   
-   - setup the virtual environment in ~/myvenv (or set to some other path and folder name)
-     
-     * python virtualenv.py ~/myvenv
-       
-   -  activate the virtual environment
-
-      * source ~/myvenv/bin/activate
-   
-   For detailed instructions and documentation see
-
-   http://virtualenv.readthedocs.org/en/latest/installation.html
-
-4. Install numpy::
-
-   pip install numpy
+Note: for hpg2 users refer to ufhpc_readme.md in the docs and follow it for installation
 
 
 Get the latest version
@@ -73,21 +45,20 @@ step 3(if the local copy was installed in the develop mode this step can be skip
 1. Clone the latest version from github
 
   - git clone https://github.com/henniggroup/MPInterfaces.git
-  
+
 2. cd MPInterfaces
-	
+
 3. python setup.py install(or develop)
 
-4. Copy the config.yaml file to mpinterfaces/config_mine.yaml
-   and update the file so that you have the following 
+4. (optional) Copy the config.yaml file to mpinterfaces/config_mine.yaml
+   and update the file so that you have the following
    environment variables :
-   
-   - MAPI_KEY=the_key_obtained_from_materialsproject
-     
-   - VASP_PSP_DIR=path_to_vasp_potcar_files
-   
 
-  
+   - MAPI_KEY=the_key_obtained_from_materialsproject
+
+   - VASP_PSP_DIR=path_to_vasp_potcar_files
+
+
 Documentation
 ==============
 
@@ -97,7 +68,7 @@ http://henniggroup.github.io/MPInterfaces/
 
 and work is underway to improve it.
 
-      
+
 Usage
 ==========
 
@@ -124,7 +95,7 @@ License
 
 MPInterfaces is released under the MIT License.::
 
-    Copyright (c) 2014-2015 Henniggroup Cornell/University of Florida & NIST
+    Copyright (c) 2014-2017 Henniggroup Cornell/University of Florida & NIST
 
     Permission is hereby granted, free of charge, to any person obtaining a copy of
     this software and associated documentation files (the "Software"), to deal in
@@ -156,11 +127,15 @@ Authors
 =========
 
 Kiran Mathew
-	
+
 Joshua Gabriel
+
+Michael Ashton
 
 Arunima Singh
 
-Michael Ashton
+Joshua T. Paul
+
+Seve G. Monahan
 
 Richard G. Hennig

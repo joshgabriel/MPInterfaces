@@ -11,11 +11,9 @@ Wulff construction to create the nanoparticle
 
 from six.moves import range
 
-import sys
 import itertools
-from fractions import gcd
+from math import gcd
 from functools import reduce
-import logging
 
 import numpy as np
 
@@ -25,12 +23,9 @@ from pymatgen.util.coord_utils import in_coord_list
 
 from mpinterfaces import get_struct_from_mp
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
-sh = logging.StreamHandler(stream=sys.stdout)
-sh.setFormatter(formatter)
-logger.addHandler(sh)
+from mpinterfaces.default_logger import get_default_logger
+
+logger = get_default_logger(__name__)
 
 
 class Nanoparticle(Molecule):
@@ -38,20 +33,19 @@ class Nanoparticle(Molecule):
     Construct nanoparticle using wulff construction
     """
 
-    def __init__(self, structure, rmax=15,
-                 hkl_family=[(1, 0, 0), (1, 1, 1)],
-                 surface_energies=[28, 25]):
+    def __init__(self, structure, rmax=15, hkl_family=((1, 0, 0), (1, 1, 1)),
+                 surface_energies=(28, 25)):
         self.structure = structure
         self.rmax = rmax
-        self.hkl_family = hkl_family
-        self.surface_energies = surface_energies
+        self.hkl_family = list(hkl_family)
+        self.surface_energies = list(surface_energies)
         spherical_neighbors = self.structure.get_sites_in_sphere(
             [0.0, 0.0, 0.0], self.rmax)
         recp_lattice = self.structure.lattice.reciprocal_lattice_crystallographic
         self.recp_lattice = recp_lattice.scale(1)
         self.set_miller_family()
-        Molecule.__init__(self, [sn[0].species_and_occu for sn in
-                                 spherical_neighbors],
+        Molecule.__init__(self, [sn[0].species_and_occu
+                                 for sn in spherical_neighbors],
                           [sn[0].coords for sn in spherical_neighbors],
                           charge=0)
 
@@ -89,8 +83,8 @@ class Nanoparticle(Molecule):
         normals = []
         for hkl in self.all_equiv_millers:
             normal = self.recp_lattice.matrix[0, :] * hkl[0] + \
-                     self.recp_lattice.matrix[1, :] * hkl[1] + \
-                     self.recp_lattice.matrix[2, :] * hkl[2]
+                self.recp_lattice.matrix[1, :] * hkl[1] + \
+                self.recp_lattice.matrix[2, :] * hkl[2]
             normals.append(normal / np.linalg.norm(normal))
         return normals
 
@@ -153,7 +147,7 @@ if __name__ == '__main__':
     """
     Wulff construction using the ASE package
     works only for cubic systems and doesn't support multiatom basis
-    
+
     from ase.cluster import wulff_construction
     from pymatgen.io.aseio import AseAtomsAdaptor
 
@@ -169,5 +163,5 @@ if __name__ == '__main__':
     #convert to pymatgen structure
     pgen_structure = AseAtomsAdaptor().get_structure(atoms)
     pgen_structure.to(fmt='poscar', filename='POSCAR_pt_nano.vasp')
-    
+
     """

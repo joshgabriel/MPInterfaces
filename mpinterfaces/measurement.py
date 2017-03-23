@@ -15,7 +15,6 @@ import sys
 import shutil
 import os
 import json
-import logging
 import itertools
 
 from pymatgen.io.vasp.inputs import Incar, Poscar
@@ -25,13 +24,16 @@ from mpinterfaces.calibrate import CalibrateMolecule
 from mpinterfaces.calibrate import CalibrateSlab
 from mpinterfaces.calibrate import CalibrateInterface
 from mpinterfaces.interface import Interface
+from mpinterfaces.default_logger import get_default_logger
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
-sh = logging.StreamHandler(stream=sys.stdout)
-sh.setFormatter(formatter)
-logger.addHandler(sh)
+__author__ = "Kiran Mathew, Joshua J. Gabriel"
+__copyright__ = "Copyright 2017, Henniggroup"
+__maintainer__ = "Joshua J. Gabriel"
+__email__ = "joshgabriel92@gmail.com"
+__status__ = "Production"
+__date__ = "March 3, 2017"
+
+logger = get_default_logger(__name__)
 
 
 class Measurement(object):
@@ -50,8 +52,7 @@ class Measurement(object):
                  modules
     """
 
-    def __init__(self, cal_objs, parent_job_dir='.',
-                 job_dir='./Measurement'):
+    def __init__(self, cal_objs, parent_job_dir='.', job_dir='./Measurement'):
         self.jobs = []
         self.handlers = []
         self.calmol = []
@@ -74,8 +75,8 @@ class Measurement(object):
         for cal in self.cal_objs:
             for i, jdir in enumerate(cal.old_job_dir_list):
                 job_dir = self.job_dir + os.sep \
-                          + jdir.replace(os.sep, '_').replace('.', '_') \
-                          + os.sep + 'STATIC'
+                    + jdir.replace(os.sep, '_').replace('.', '_') \
+                    + os.sep + 'STATIC'
                 logger.info('setting up job in {}'.format(job_dir))
                 cal.incar = Incar.from_file(jdir + os.sep + 'INCAR')
                 cal.incar['EDIFF'] = '1E-6'
@@ -142,14 +143,14 @@ class MeasurementSolvation(Measurement):
 
     def __init__(self, cal_obj, parent_job_dir='.',
                  job_dir='./MeasurementSolvation',
-                 sol_params={'EB_K': [78.4],
-                             'TAU': [0],
-                             'LAMBDA_D_K': [3.0],
-                             'NELECT': []}):
+                 sol_params=None):
         Measurement.__init__(self, cal_objs=cal_obj,
                              parent_job_dir=parent_job_dir,
                              job_dir=job_dir)
-        self.sol_params = sol_params
+        self.sol_params = sol_params or {'EB_K': [78.4],
+                                         'TAU': [0],
+                                         'LAMBDA_D_K': [3.0],
+                                         'NELECT': []}
 
     def setup(self):
         """
@@ -176,10 +177,10 @@ class MeasurementSolvation(Measurement):
             prod_list = [self.sol_params.get(k) for k in keys]
             for params in itertools.product(*tuple(prod_list)):
                 job_dir = self.job_dir + os.sep \
-                          + cal.old_job_dir_list[0].replace(os.sep,
-                                                            '_').replace('.',
-                                                                         '_') \
-                          + os.sep + 'SOL'
+                    + cal.old_job_dir_list[0].replace(os.sep,
+                                                      '_').replace('.',
+                                                                   '_') \
+                    + os.sep + 'SOL'
                 for i, k in enumerate(keys):
                     if k == 'NELECT':
                         cal.incar[k] = params[i] + nelectrons
@@ -245,8 +246,8 @@ class MeasurementInterface(Measurement):
         for cal in self.cal_objs:
             for i, jdir in enumerate(cal.old_job_dir_list):
                 job_dir = self.job_dir + os.sep \
-                          + jdir.replace(os.sep, '_').replace('.', '_') + \
-                          os.sep + 'STATIC'
+                    + jdir.replace(os.sep, '_').replace('.', '_') + \
+                    os.sep + 'STATIC'
                 cal.incar = Incar.from_file(jdir + os.sep + 'INCAR')
                 cal.incar['EDIFF'] = '1E-6'
                 cal.incar['NSW'] = 0
@@ -301,8 +302,8 @@ class MeasurementInterface(Measurement):
             key = key_slab + key_ligand
             E_interfaces[key] = self.get_energy(cal)
             E_binding[key] = E_interfaces[key] \
-                             - E_slabs[key_slab] \
-                             - cal.system['num_ligands'] * E_ligands[
+                - E_slabs[key_slab] \
+                - cal.system['num_ligands'] * E_ligands[
                 key_ligand]
         logger.info('Binding energy = {}'.format(E_binding))
 
