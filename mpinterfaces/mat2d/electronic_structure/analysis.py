@@ -27,7 +27,7 @@ __date__ = "March 3, 2017"
 def get_band_edges():
     """
     Calculate the band edge locations relative to the vacuum level
-    for a semiconductor.
+    for a semiconductor. For a metal, returns the fermi level.
 
     Returns:
         edges (dict): {'up_cbm': , 'up_vbm': , 'dn_cbm': , 'dn_vbm': , 'efermi'}
@@ -42,8 +42,6 @@ def get_band_edges():
     efermi = vasprun.efermi - evac
 
     if bs.is_spin_polarized:
-        print(eigenvals[Spin.up])
-        print([e[0]-evac for e in eigenvals[Spin.up][0]])
         up_cbm = min(
             [min([e[0] for e in eigenvals[Spin.up][i] if not e[1]])
              for i in range(len(eigenvals[Spin.up]))]) - evac
@@ -60,10 +58,14 @@ def get_band_edges():
                  'dn_vbm': dn_vbm, 'efermi': efermi}
 
     else:
-        cbm = bs.get_cbm()['energy'] - evac
-        vbm = bs.get_vbm()['energy'] - evac
-        edges = {'up_cbm': cbm, 'up_vbm': vbm, 'dn_cbm': cbm, 'dn_vbm': vbm,
-                 'efermi': efermi}
+        if bs.is_metal:
+            edges = {'up_cbm': None, 'up_vbm': None, 'dn_cbm': None, 'dn_vbm': None,
+                     'efermi': efermi}
+        else:
+            cbm = bs.get_cbm()['energy'] - evac
+            vbm = bs.get_vbm()['energy'] - evac
+            edges = {'up_cbm': cbm, 'up_vbm': vbm, 'dn_cbm': cbm, 'dn_vbm': vbm,
+                     'efermi': efermi}
 
     return edges
 
