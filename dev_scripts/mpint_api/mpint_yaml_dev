@@ -189,6 +189,7 @@ class mpint(object):
                 shutil.copy(wavecar_file,
                             self.cal_job_dir + os.sep + 'WAVECAR')
 
+
     def dev_process_input(self, args):
         update = {}
         if args.command == 'make_project':
@@ -283,8 +284,9 @@ class mpint(object):
                         self.turn_knobs.update({key: paramlist})
 
     def get_cal(self, args):
-        #self.dev_process_input(args)
-        self.process_input(args)
+        print ('reaches here')
+        self.dev_process_input(args)
+        #self.process_input(args)
         cal = None
         if self.turn_knobs.get('VACUUM') or self.turn_knobs.get('THICKNESS'):
             logger.info("slab calibration: thickness or vacuum")
@@ -393,6 +395,12 @@ Note: this script submits jobs only to the PBS ques such as hipergator
         #parser.add_argument('-w', '--workflow', help="workflow input yaml file")
 
         subparsers = parser.add_subparsers(help='command', dest='command')
+
+
+        project_parser = subparsers.add_parser('make_project', help='make project \
+                                                      according to project.yaml')
+
+        project_parser.add_argument('i', type=str,help='name of project file')
 
         cal_parser = subparsers.add_parser('run', help='run the specified job')
         cal_parser.set_defaults(func=self.run)
