@@ -29,6 +29,7 @@ from mpinterfaces import get_struct_from_mp
 from mpinterfaces.calibrate import Calibrate, CalibrateSlab
 from mpinterfaces.interface import Interface
 from mpinterfaces.utils import *
+from mpinterfaces.mpint_parser import *
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -51,7 +52,6 @@ def process_dir(val):
             if os.path.isfile(fname) and fnmatch(fname, "*POSCAR*"):
                 poscar_list.append(Poscar.from_file(fname))
     return poscar_list
-
 
 class mpint(object):
     def __init__(self):
@@ -361,6 +361,8 @@ class mpint(object):
         else:
             update_checkpoint()
 
+
+
     def main(self):
         m_description = """
 Management tool for vasp projects, starting from
@@ -384,33 +386,8 @@ structure
 
 Note: this script submits jobs only to the PBS ques such as hipergator
 """
-        parser = ArgumentParser(description=m_description)
-        #parser.add_argument('-c', '--command', help="command to execute")
-        #parser.add_argument('-w', '--workflow', help="workflow input yaml file")
 
-        parser.add_argument('-i', '--input', help="yaml input file")
-        parser.add_argument('-t', '--type', help="type of calculation")
-
-        #parser.add_argument('-c', '--command', help="command to execute")
-        #parser.add_argument('-w', '--workflow', help="workflow input yaml file")
-
-        subparsers = parser.add_subparsers(help='command', dest='command')
-
-
-        project_parser = subparsers.add_parser('make_project', help='make project \
-                                                      according to project.yaml')
-
-        project_parser.add_argument('i', type=str,help='name of project file')
-
-        cal_parser = subparsers.add_parser('run', help='run the specified job')
-        cal_parser.set_defaults(func=self.run)
-
-        update_parser = subparsers.add_parser('update',
-                                              help='update/rerun the checkpoint file calibrate.json ')
-        update_parser.add_argument('jids', type=str, nargs='*',
-                                   help='list of job ids')
-        update_parser.set_defaults(func=self.update)
-
+        parser = create_parser();
         args = parser.parse_args()
         args.func(args)
 
