@@ -30,6 +30,10 @@ class TestGetRList(unittest.TestCase):
 
         self.assertEqual(cm.exception.code, 0);
 
+    def test_input(self):
+        args = mpint_parse_arguments(['--input', 'test_input.yaml'])
+        self.assertEqual(args.input, 'test_input.yaml')
+
 
 if __name__ == "__main__":
     unittest.main()

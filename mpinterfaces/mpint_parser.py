@@ -9,12 +9,6 @@ from six.moves import range
 from argparse import ArgumentParser
 
 
-def run():
-    pass
-
-def update():
-    pass
-
 def mpint_parse_arguments(args):
     m_description = """
 Management tool for vasp projects, starting from
@@ -52,10 +46,8 @@ Note: this script submits jobs only to the PBS ques such as hipergator
     project_parser.add_argument('i', type=str,help='name of project file')
 
     cal_parser = subparsers.add_parser('run', help='run the specified job')
-    cal_parser.set_defaults(func=run)
     update_parser = subparsers.add_parser('update', help='update/rerun the checkpoint file calibrate.json ')
     update_parser.add_argument('jids', type=str, nargs='*', help='list of job ids')
-    update_parser.set_defaults(func=update)
 
     return parser.parse_args(args);
 

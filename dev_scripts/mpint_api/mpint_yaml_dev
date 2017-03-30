@@ -364,8 +364,7 @@ class mpint(object):
 
 
     def main(self):
-        parser = create_parser();
-        args = parser.parse_args()
+        args = mpint_parse_arguments(sys.argv[1:])
         args.func(args)
 
 
