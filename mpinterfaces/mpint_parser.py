@@ -15,7 +15,7 @@ def run():
 def update():
     pass
 
-def create_parser():
+def mpint_parse_arguments(args):
     m_description = """
 Management tool for vasp projects, starting from
 encut, kpoint or other parameter optimization of till the slab solvation.
@@ -57,5 +57,5 @@ Note: this script submits jobs only to the PBS ques such as hipergator
     update_parser.add_argument('jids', type=str, nargs='*', help='list of job ids')
     update_parser.set_defaults(func=update)
 
-    return parser;
+    return parser.parse_args(args);
 
