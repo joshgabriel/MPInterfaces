@@ -4,45 +4,48 @@
 
 from __future__ import division, unicode_literals, print_function
 
-__author__ = ", ".join(
-    ["Kiran Mathew", "Joshua J. Gabriel", "Arunima K. Singh", "Michael Ashton",\
-     "Joshua T. Paul", "Seve G. Monahan", "Richard G. Hennig"])
-__date__ = "March 3 2017"
-__version__ = "1.6.0"
-
 import os
 import sys
 import operator
-from pymatgen.matproj.rest import MPRester
-import mpinterfaces
+import warnings
+
+from pymatgen.ext.matproj import MPRester
+
 from monty.serialization import loadfn
 
-PACKAGE_PATH = mpinterfaces.__file__.replace('__init__.pyc', '')
-PACKAGE_PATH = PACKAGE_PATH.replace('__init__.py', '')
+__author__ = "Kiran Mathew, Joshua J. Gabriel, Michael Ashton, " \
+             "Arunima K. Singh, Joshua T. Paul, Seve G. Monahan, " \
+             "Richard G. Hennig"
+__date__ = "March 3 2017"
+__version__ = "1.7.0"
 
-# set environ variables for MAPI_KEY and VASP_PSP_DIR
+PACKAGE_PATH = os.path.dirname(__file__)
 
 try:
-    MY_CONFIG = loadfn(PACKAGE_PATH + 'config_mine.yaml')
-    try:
-        os.environ['VASP_PSP_DIR'] = MY_CONFIG['potentials']
-        os.environ['MAPI_KEY'] = MY_CONFIG['mp_api']
-    except:
-        raise ValueError('config_mine.yaml file not configured .. please'
-                         ' set variables potentials and mp_api and retry')
+    MPINT_CONFIG = loadfn(os.path.join(PACKAGE_PATH, 'mpint_config.yaml'))
+except:
+    MPINT_CONFIG = {}
+    warnings.warn('mpint_config.yaml file not configured.')
 
-except IOError:
-    raise ValueError('No config_mine.yaml file found. Please check')
+# set environ variables for MAPI_KEY and VASP_PSP_DIR
+if MPINT_CONFIG.get('potentials', ''):
+    os.environ['PMG_VASP_PSP_DIR'] = MPINT_CONFIG.get('potentials', '')
+MP_API = MPINT_CONFIG.get('mp_api', '')
+if MP_API:
+    os.environ['MAPI_KEY'] = MP_API
 
-MAPI_KEY = os.environ.get("MAPI_KEY", "")
-MPR = MPRester(MAPI_KEY)
+MPR = MPRester(MP_API)
+USERNAME = MPINT_CONFIG.get('username', None)
+VASP_STD_BIN = MPINT_CONFIG.get('normal_binary', None)
+VASP_TWOD_BIN = MPINT_CONFIG.get('twod_binary', None)
+VDW_KERNEL = MPINT_CONFIG.get('vdw_kernel', None)
+VASP_PSP = MPINT_CONFIG.get('potentials', None)
+QUEUE_SYSTEM = MPINT_CONFIG.get('queue_system', None)
+QUEUE_TEMPLATE = MPINT_CONFIG.get('queue_template', None)
 
-USERNAME= MY_CONFIG['username']
-STD_BINARY= MY_CONFIG['normal_binary']
-TWOD_BINARY= MY_CONFIG['twod_binary']
-VDW_KERNEL= MY_CONFIG['vdw_kernel']
-VASP_POTENTIALS= MY_CONFIG['potentials']
-QUEUE_SYSTEM= MY_CONFIG['queue_system']
+if not QUEUE_SYSTEM:
+    QUEUE_SYSTEM = 'slurm'
+
 
 def get_struct_from_mp(formula, MAPI_KEY="", all_structs=False):
     """

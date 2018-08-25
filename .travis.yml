@@ -16,15 +16,14 @@ addons:
     - python-scipy
     - python-pip
 install:
-   - travis_wait pip install -q numpy
+   - travis_wait pip install -q numpy==1.14.3
    - travis_wait pip install -q codecov
    - python setup.py develop
-   - cp config.yaml mpinterfaces/config_mine.yaml
+   - cp config_files/mpint_config.yaml mpinterfaces/
 cache:
    - pip
 script: 
    - nosetests mpinterfaces --with-coverage
-   - nosetests twod_materials --with-coverage
    - codecov
 branches:
   except:
@@ -34,6 +33,7 @@ notifications:
   email:
     recipients:
       - joshgabriel92@ufl.edu
+      - ashtonmv@gmail.com
       - km468@cornell.edu
       - richardghennig@gmail.com
     on_success: change

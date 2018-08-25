@@ -1,22 +1,5 @@
 from __future__ import division, unicode_literals
 
-import itertools
-import json
-import re
-import warnings
-
-from monty.json import MontyDecoder, MontyEncoder
-from six import string_types
-
-from pymatgen.core.composition import Composition
-from pymatgen.core.periodic_table import Element
-from pymatgen.core.structure import Structure
-
-from pymatgen.entries.computed_entries import ComputedEntry, \
-    ComputedStructureEntry
-from pymatgen.entries.exp_entries import ExpEntry
-
-
 """
 This is essentially just a clone of the MPRester object in pymatgen with
 slight modifications to work with MaterialsWeb.
@@ -26,9 +9,14 @@ API v2 to enable the creation of data structures and pymatgen objects using
 MaterialsWeb data.
 """
 
+import json
+import warnings
+
+from monty.json import MontyDecoder
+from pymatgen.core.structure import Structure
+
 __author__ = "Michael Ashton"
 __copyright__ = "Copyright 2017, Henniggroup"
-__version__ = "1.6"
 __maintainer__ = "Joshua J. Gabriel"
 __email__ = "joshgabriel92@gmail.com"
 __status__ = "Production"
@@ -44,6 +32,7 @@ class MWRester(object):
             do_something
     MWRester uses the "requests" package, which provides for HTTP connection
     pooling. All connections are made via https for security.
+
     Args:
         api_key (str): A String API key for accessing the MaterialsWeb
             REST interface. Please obtain your API key at
@@ -73,7 +62,7 @@ class MWRester(object):
                                  "band_gap", "density", "icsd_id", "cif")
 
     def __init__(self, api_key=None,
-                 endpoint="https://www.materialsweb.org/rest"):
+                 endpoint="https://2dmaterialsweb.org/rest"):
         if api_key is not None:
             self.api_key = api_key
         else:
@@ -98,15 +87,12 @@ class MWRester(object):
     def _make_request(self, sub_url, payload=None, method="GET",
                       mp_decode=True):
         response = None
-        url = self.preamble + sub_url
+        url = self.preamble + sub_url + "/" + self.api_key
         try:
             if method == "POST":
                 response = self.session.post(url, data=payload, verify=True)
             else:
-                # For now, the SSL certificate is being annoying and
-                # won't verify. Once it does, we can change this back
-                # to verify=True.
-                response = self.session.get(url, params=payload, verify=False)
+                response = self.session.get(url, params=payload, verify=True)
             if response.status_code in [200, 400]:
                 if mp_decode:
                     data = json.loads(response.text, cls=MontyDecoder)
@@ -127,8 +113,7 @@ class MWRester(object):
                 if hasattr(response, "content") else str(ex)
             raise MWRestError(msg)
 
-
-    def get_data(self, chemsys_formula_id, data_type="vasp", prop=""):
+    def get_data(self, query, prop=""):
         """
         Flexible method to get any data using the MaterialsWeb REST
         interface. Generally used by other methods for more specific queries.
@@ -136,18 +121,24 @@ class MWRester(object):
         number of pieces of data returned. The general format is as follows:
         [{"material_id": material_id, "property_name" : value}, ...]
         Args:
-            chemsys_formula_id (str): A chemical system (e.g., Li-Fe-O),
+            query (str): A chemical system (e.g., Li-Fe-O),
                 or formula (e.g., Fe2O3) or materials_id (e.g., mp-1234).
-            data_type (str): Type of data to return. Currently can either be
-                "vasp" or "exp".
             prop (str): Property to be obtained. Should be one of the
                 MWRester.supported_task_properties. Leave as empty string for a
                 general list of useful properties.
         """
-        sub_url = "/materials/%s/%s" % (chemsys_formula_id, data_type)
+        sub_url = "/materials/%s" % (query)
         if prop:
             sub_url += "/" + prop
+
         return self._make_request(sub_url)
+
+
+    def get_entry_by_material_id(self, material_id):
+        """
+        """
+        data = self.get_data(material_id)
+        return data
 
 
     def get_structure_by_material_id(self, material_id, final=True):
@@ -164,6 +155,46 @@ class MWRester(object):
         prop = "final_structure" if final else "initial_structure"
         data = self.get_data(material_id)
         return Structure.from_str(data[0][prop], fmt="json")
+
+
+    def get_all_structures(self, final=True):
+        """
+        Download all MaterialsWeb structures as pymatgen Structure
+        objects.
+        Args:
+            final (bool): Whether to get the final structures, or the initial
+                (pre-relaxation) structures. Defaults to True.
+        Returns:
+            List of Structure objects.
+        """
+        prop = "final_structure" if final else "initial_structure"
+        data = self.get_data("all")
+        structures = [Structure.from_str(data[i][prop], fmt="json") for i in
+                      range(len(data))]
+        return structures
+
+
+    def get_all_material_ids(self):
+        """
+        Return a list of all active material ID's.
+
+        Returns:
+         material ID's (list).
+        """
+        data = self.get_data(query="all", prop="ids")
+        return data
+
+
+    def get_maximum_material_id(self):
+        """
+        Return the highest material ID currently in the database.
+        Useful for indexing new materials to add.
+
+        Returns:
+            material ID (str): e.g. mw-745.
+        """
+        data = self.get_data(query="all", prop="ids")
+        return data[-1]
 
 
 class MWRestError(Exception):

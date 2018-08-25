@@ -15,7 +15,6 @@ import sys
 import shutil
 import os
 import json
-import logging
 import itertools
 
 from pymatgen.io.vasp.inputs import Incar, Poscar
@@ -25,12 +24,10 @@ from mpinterfaces.calibrate import CalibrateMolecule
 from mpinterfaces.calibrate import CalibrateSlab
 from mpinterfaces.calibrate import CalibrateInterface
 from mpinterfaces.interface import Interface
-
 from mpinterfaces.default_logger import get_default_logger
 
 __author__ = "Kiran Mathew, Joshua J. Gabriel"
 __copyright__ = "Copyright 2017, Henniggroup"
-__version__ = "1.6"
 __maintainer__ = "Joshua J. Gabriel"
 __email__ = "joshgabriel92@gmail.com"
 __status__ = "Production"
@@ -55,8 +52,7 @@ class Measurement(object):
                  modules
     """
 
-    def __init__(self, cal_objs, parent_job_dir='.',
-                 job_dir='./Measurement'):
+    def __init__(self, cal_objs, parent_job_dir='.', job_dir='./Measurement'):
         self.jobs = []
         self.handlers = []
         self.calmol = []
@@ -147,14 +143,14 @@ class MeasurementSolvation(Measurement):
 
     def __init__(self, cal_obj, parent_job_dir='.',
                  job_dir='./MeasurementSolvation',
-                 sol_params={'EB_K': [78.4],
-                             'TAU': [0],
-                             'LAMBDA_D_K': [3.0],
-                             'NELECT': []}):
+                 sol_params=None):
         Measurement.__init__(self, cal_objs=cal_obj,
                              parent_job_dir=parent_job_dir,
                              job_dir=job_dir)
-        self.sol_params = sol_params
+        self.sol_params = sol_params or {'EB_K': [78.4],
+                                         'TAU': [0],
+                                         'LAMBDA_D_K': [3.0],
+                                         'NELECT': []}
 
     def setup(self):
         """

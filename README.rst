@@ -1,10 +1,11 @@
-.. image:: https://travis-ci.org/joshgabriel/MPInterfaces.svg?branch=master
-.. image:: https://codecov.io/gh/joshgabriel/MPInterfaces/coverage.svg?branch=master
+.. image:: https://travis-ci.org/henniggroup/MPInterfaces.svg?branch=master
+.. image:: https://codecov.io/gh/henniggroup/MPInterfaces/coverage.svg?branch=master
 
 MPinterfaces is a python package that enables high throughput Density
-Functional Theory(DFT) analysis of arbitrary material interfaces(ligand capped
-nanoparticles, surfaces in the presence of solvents and hetero-structure
-interfaces) using VASP_, VASPsol_, LAMMPS_, materialsproject_ database
+Functional Theory(DFT) analysis of arbitrary material interfaces(two dimensional
+materials, hetero-structure, ligand capped
+nanoparticles and surfaces in the presence of solvents) using
+VASP_, VASPsol_, LAMMPS_, materialsproject_ database
 as well as their open source tools_ and a little bit of ase_.
 
 .. _materialsproject: https://github.com/materialsproject
@@ -19,78 +20,107 @@ as well as their open source tools_ and a little bit of ase_.
 
 .. _ase: https://wiki.fysik.dtu.dk/ase/
 
+.. image:: https://github.com/henniggroup/MPInterfaces/blob/master/docs/mpinterfaces-logo.png
+   :width: 75 %
+   :align: center
 
 Installation
 ==============
 
-The following steps applies only to linux and OSX(with xcode) operating systems.
+Prepping - Setting up Virtual Environments with Miniconda
+-------------------------------
 
-Prepping
--------------
+We recommend setting up virtual environment
+using Miniconda which can be installed according to their instructions from https://conda.io/miniconda.html
 
-1. Make sure that you are using python>=2.7 (do a "python --version").
+Note for SuperComputer Clusters with Linux OS:
+---------------------------------------------
 
-NOTE: for hpg2 users refer to ufhpc_readme.md in the docs and follow it for installation 
+HiperGator2 and other linux based supercomputing clusters
+have shared modules one of which are the C++ modules under gcc.
+This needs to be loaded before any of the aforementioned
+gcc/5.2.0 has all the shared libraries
+required for a successful installation.
 
-2. it is highly recommended that you use gcc compiler. So type::
+Do the following on HiperGator2 before you create
+the Miniconda environment:
 
-   export CC=gcc
+$ module purge
+$ module load gcc/5.2.0
 
-   Note: *Skip this step if the already available numpy/scipy packages
-   were setup using intel MKL or if you are using Clang compiler suite
-   on OSX*
+Follow the following steps to set up virtual environment using Miniconda
 
-3. Unless you have admin privilege on the machine you are installing, it is
-   better to install this package and all its dependencies in a virtual environment.
+$ conda create -n name_of_your_environment python=3.6
 
-   - get the latest version from https://pypi.python.org/pypi/virtualenv#downloads
-   
-   - tar xvfz virtualenv-X.X.X.tar.gz
-   
-   - cd virtualenv-X.X.X
-   
-   - setup the virtual environment in ~/myvenv (or set to some other path and folder name)
-     
-     * python virtualenv.py ~/myvenv
-       
-   -  activate the virtual environment
+On Mac OS and Linux
 
-      * source ~/myvenv/bin/activate
-   
-   For detailed instructions and documentation see
+$ source activate name_of_your_environment
 
-   http://virtualenv.readthedocs.org/en/latest/installation.html
+$ conda install numpy scipy matplotlib ipython
 
-4. Install numpy::
+On Windows:
 
-   pip install numpy
+$ activate name_of_your_environment
 
+$ conda install numpy scipy matplotlib ipython
 
-Get the latest version
------------------------
+Installing Pymatgen
+--------------------
+
+$ conda install -c matsci pymatgen
+
+Note: You will need to have C++ libraries properly
+installed for the package to install correctly on Windows.
+
+Note: If this does not work, see http://pymatgen.org/#getting-pymatgen
+
+Installing MPInterfaces from GitHub
+-----------------------------------
+
+If you would like to get the latest updates, or develop and contribute we recommend getting the bleeding edge
+copy from the github repository.
 
 If you already have a local copy, steps 1 and 2 of the following instructions
 can be skipped. Just do a "git pull" from the MPInterfaces folder and go to
 step 3(if the local copy was installed in the develop mode this step can be skipped too).
 
+Note: on using virtual environments on your own machine, we recommend to use Miniconda.
+
 1. Clone the latest version from github
 
   - git clone https://github.com/henniggroup/MPInterfaces.git
-  
+
 2. cd MPInterfaces
-	
+
 3. python setup.py install(or develop)
 
-4. Copy the config.yaml file to mpinterfaces/config_mine.yaml
-   and update the file so that you have the following 
+4. Copy the mpint_config.yaml file from config_files/mpint_config.yaml
+   to ~/mpint_config.yaml
+   and update the file so that you at least have the following
    environment variables :
-   
-   - MAPI_KEY=the_key_obtained_from_materialsproject
-     
-   - VASP_PSP_DIR=path_to_vasp_potcar_files
-   
 
-  
+   - MAPI_KEY=the_key_obtained_from_materialsproject
+
+   - PMG_VASP_PSP_DIR=path_to_vasp_potcar_files
+
+
+For teaching and demo purposes, we recommend using Microsoft Azure notebooks,
+an example of which is at https://notebooks.azure.com/JoshGabriel92/libraries/PourbaixCourse
+which contains two notebooks that illustrate installing pymatgen and pyhull for on the fly
+data science tutorials. We have one notebook FeOH_Example.ipynb for Pourbaix diagrams and an MPInterfacesDemo that illustrate other features of the MPInterfaces code with more to come.
+
+
+
+Installing MPInterfaces from PyPI
+----------------------------------------
+
+Once you have a nicely prepped virtual environment with miniconda
+and you do not seek to do extensive code development/contributions,
+we recommend installing from PyPI with:
+
+$ pip install MPInterfaces_Latest
+
+
 Documentation
 ==============
 
@@ -100,7 +130,7 @@ http://henniggroup.github.io/MPInterfaces/
 
 and work is underway to improve it.
 
-      
+
 Usage
 ==========
 
@@ -127,7 +157,7 @@ License
 
 MPInterfaces is released under the MIT License.::
 
-    Copyright (c) 2014-2015 Henniggroup Cornell/University of Florida & NIST
+    Copyright (c) 2014-2017 Henniggroup Cornell/University of Florida & NIST
 
     Permission is hereby granted, free of charge, to any person obtaining a copy of
     this software and associated documentation files (the "Software"), to deal in
@@ -159,11 +189,15 @@ Authors
 =========
 
 Kiran Mathew
-	
+
 Joshua Gabriel
+
+Michael Ashton
 
 Arunima Singh
 
-Michael Ashton
+Joshua T. Paul
+
+Seve G. Monahan
 
 Richard G. Hennig

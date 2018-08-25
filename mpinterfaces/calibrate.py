@@ -32,7 +32,6 @@ import re
 import datetime
 from itertools import product
 from collections import OrderedDict
-import logging
 
 import numpy as np
 
@@ -51,16 +50,14 @@ from monty.serialization import dumpfn
 
 from mpinterfaces.instrument import MPINTVaspInputSet, MPINTVaspJob
 from mpinterfaces.interface import Interface, Ligand
-from mpinterfaces.utils import get_ase_slab, get_magmom_string, get_magmom_afm, get_magmom_mae
-
-from twod_materials.electronic_structure.startup import get_2D_hse_kpoints,\
+from mpinterfaces.utils import get_ase_slab, get_magmom_string, get_magmom_afm, \
+    get_magmom_mae, print_exception
+from mpinterfaces.mat2d.electronic_structure import get_2D_hse_kpoints,\
     get_2D_incar_hse_prep, get_2D_incar_hse
-
 from mpinterfaces.default_logger import get_default_logger
 
 __author__ = "Kiran Mathew, Joshua J. Gabriel"
 __copyright__ = "Copyright 2017, Henniggroup"
-__version__ = "1.6"
 __maintainer__ = "Joshua J. Gabriel"
 __email__ = "joshgabriel92@gmail.com"
 __status__ = "Production"
@@ -68,23 +65,6 @@ __date__ = "March 3, 2017"
 
 
 logger = get_default_logger(__name__)
-
-
-# Error exception catching function for debugging
-# can be a very useful tool for a developer
-# move to utils and activate when debug mode is on
-import linecache
-
-
-def PrintException():
-    exc_type, exc_obj, tb = sys.exc_info()
-    f = tb.tb_frame
-    lineno = tb.tb_lineno
-    filename = f.f_code.co_filename
-    linecache.checkcache(filename)
-    line = linecache.getline(filename, lineno, f.f_globals)
-    print ('EXCEPTION IN ({}, LINE {} "{}"): {}'.format(
-        filename, lineno, line.strip(), exc_obj))
 
 
 class Calibrate(MSONable):
@@ -105,7 +85,7 @@ class Calibrate(MSONable):
                  reuse_override=None, reuse_incar=None, solvation=None,
                  turn_knobs=OrderedDict([('ENCUT', []),
                                          ('KPOINTS', [])]),
-                 checkpoint_file=None, cal_logger=None):
+                 checkpoint_file=None, finer_kpoint=None, cal_logger=None):
         """
         Calibrate constructor
 
@@ -225,6 +205,7 @@ class Calibrate(MSONable):
         self.reuse_incar = reuse_incar
         self.reuse_override = reuse_override
         self.reuse_paths = None  # list object communicated to instrument
+        self.finer_kpoint = finer_kpoint
         self.functional = functional
         self.checkpoint_file = checkpoint_file
         if cal_logger:
@@ -507,6 +488,16 @@ class Calibrate(MSONable):
                                                           ibz=HighSymmKpath(
                                                               poscar.structure))
 
+            elif self.Grid_type == 'D':
+                self.kpoints = Kpoints.automatic_density(structure=poscar.structure,kppa=kpoint)
+
+            elif self.Grid_type == 'Finer_G_Mesh':
+                # kpoint is the scaling factor and self.kpoints is the old kpoint mesh
+                self.logger.info('Setting Finer G Mesh for {0} by scale {1}'.format(kpoint, self.finer_kpoint))
+                self.kpoints = Kpoints.gamma_automatic(kpts = \
+                   [i * self.finer_kpoint for i in kpoint])
+                self.logger.info('Finished scaling operation of k-mesh')
+
         # applicable for database runs
         # future constructs or settinsg can be activated via a yaml file
         # database yaml file or better still the input deck from its speification
@@ -632,7 +623,6 @@ class Calibrate(MSONable):
                                          format(pos))
                         # check if it is KPOINTS altering job like HSE
                         if self.Grid_type == 'hse_bands_2D_prep':
-                            print ('passed grid type if')
                             # HSE prep calcualtions
                             # reset the INCAR file with a magmom only if exists
                             try:
@@ -641,7 +631,6 @@ class Calibrate(MSONable):
                             except:
                                 incar_dict = {}
                             incar_dict = get_2D_incar_hse_prep(incar_dict)
-                            print ('passed incar_dict update')
                             self.set_kpoints(poscar=poscar)
                             self.logger.info(
                                 'updated input set for HSE 2D prep calcaultion')
@@ -665,6 +654,11 @@ class Calibrate(MSONable):
                         elif self.Grid_type == 'hse_bands':
                             # general HSE bands
                             pass
+
+                        elif self.Grid_type == 'Finer_G_Mesh':
+                            self.logger.info('updating to Finer G Mesh')
+                            kpoint = Kpoints.from_file(pos+os.sep+'KPOINTS')
+                            self.set_kpoints(kpoint=kpoint.kpts[0])
 
                         else:
                             # use the same kpoints file and build from the old
@@ -748,7 +742,6 @@ class Calibrate(MSONable):
                         # check what to do if the previous calculation being reused is not
                         # actuall done .. system exit or adopt a user override
                         # with POSCAR
-                        print (PrintException())
                         self.logger.warn(
                             'Empty relaxed CONTCAR file .. Probably job not done')
                         if not self.reuse_override:

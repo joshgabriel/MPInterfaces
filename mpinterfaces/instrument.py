@@ -10,17 +10,15 @@ The instrument module:
 defines the inputset and the job
 
 """
-import sys
 import os
 import shutil
 import subprocess
 import logging
 
 from pymatgen.io.vasp.inputs import Incar, Poscar, Potcar, Kpoints
-
 from pymatgen.io.vasp.sets import DictSet
 # uncomment for python2.7 pymatgen versions compatibility and more changes, refer
-# ufhpc_py27_compat branch 
+# ufhpc_py27_compat branch
 #try:
 #    from pymatgen.io.vasp.sets import DictVaspInputSet
 #except ImportError:
@@ -33,12 +31,10 @@ from monty.json import MontyDecoder
 from fireworks.user_objects.queue_adapters.common_adapter import CommonAdapter
 
 from mpinterfaces.data_processor import MPINTVasprun
-
 from mpinterfaces.default_logger import get_default_logger
 
 __author__ = "Kiran Mathew, Joshua J. Gabriel"
 __copyright__ = "Copyright 2017, Henniggroup"
-__version__ = "1.6"
 __maintainer__ = "Joshua J. Gabriel"
 __email__ = "joshgabriel92@gmail.com"
 __status__ = "Production"
@@ -46,23 +42,27 @@ __date__ = "March 3, 2017"
 
 logger = get_default_logger(__name__)
 
+
 class MPINTVaspInputSet(DictSet):
     """
     defines the set of input required for a vasp job i.e
     create INCAR, POSCAR, POTCAR & KPOINTS files
     """
 
-    def __init__(self, name, incar, poscar, potcar, kpoints,
+    def __init__(self, name, incar, poscar, kpoints, potcar=None,
                  qadapter=None, script_name='submit_script',
-                 vis_logger=None, reuse_path=None, **kwargs):
+                 vis_logger=None, reuse_path=None, test=False,
+                 **kwargs):
         """
         default INCAR from config_dict
 
         """
         self.name = name
+        self.test = test
         self.incar_init = Incar.from_dict(incar.as_dict())
         self.poscar_init = Poscar.from_dict(poscar.as_dict())
-        self.potcar_init = Potcar.from_dict(potcar.as_dict())
+        if not self.test:
+            self.potcar_init = Potcar.from_dict(potcar.as_dict())
         if not isinstance(kpoints, str):
             self.kpoints_init = Kpoints.from_dict(kpoints.as_dict())
         else:
@@ -78,7 +78,8 @@ class MPINTVaspInputSet(DictSet):
         config_dict['INCAR'] = self.incar_init.as_dict()
         config_dict['POSCAR'] = self.poscar_init.as_dict()
         # caution the key and the value are not always the same
-        config_dict['POTCAR'] = self.potcar_init.as_dict()
+        if not self.test:
+            config_dict['POTCAR'] = self.potcar_init.as_dict()
         # dict(zip(self.potcar.as_dict()['symbols'],
         # self.potcar.as_dict()['symbols']))
         if not isinstance(kpoints, str):
@@ -118,9 +119,16 @@ class MPINTVaspInputSet(DictSet):
                 for line in self.kpoints_init:
                     kpts.write(line)
 
-        self.potcar_init.write_file(os.path.join(d, 'POTCAR'))
+        if not self.test:
+            self.potcar_init.write_file(os.path.join(d, 'POTCAR'))
         self.poscar_init.write_file(os.path.join(d, 'POSCAR'),
                                significant_figures=10)
+
+        if self.reuse_path:
+            for reuse in self.reuse_path:
+                self.logger.info("copied over {0} ".format(reuse))
+                shutil.copy(reuse, d)
+
         if self.qadapter is not None:
             with open(os.path.join(d, self.script_name), 'w') as f:
                 queue_script = self.qadapter.get_script_str(job_dir)
