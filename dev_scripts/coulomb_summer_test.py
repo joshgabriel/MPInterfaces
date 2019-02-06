@@ -3,13 +3,12 @@ Mind: Specify  path for your bader executable in main with the needed options
 """
 
 import numpy as np
-from pymatgen import Structure
+from pymatgen.core.structure import Structure
 from pymatgen.analysis.energy_models import EnergyModel
 from pymatgen.analysis.ewald import EwaldSummation
 from pymatgen.io.vaspio import Chgcar, Potcar
 
 from mpinterfaces import *
-
 
 class ColoumbEnergy(EnergyModel):
     def get_energy(self, structure):
@@ -232,142 +231,7 @@ if __name__ == '__main__':
     BA = Bader_Analysis(
         bader_path=bader_path)  # optional user specifies bader path
     relaxed_oxidated_structure = BA.get_oxidation_state_decorated_structure()
-    print "got oxidated structure.. starting optimization"
-    print relaxed_oxidated_structure
-    lig_part_charge = []
-    slab_part_charges = []
-    total = []
-    for i, sitei in enumerate(relaxed_oxidated_structure.as_dict()['sites']):
-        total.append(sitei['species'][0]['oxidation_state'])
-        if i in [0, 1, 2, 3, 4, 5, 54, 55, 56, 57, 58, 107, 108, 109, 110]:
-            print sitei['species'][0]['element'], sitei['species'][0][
-                'oxidation_state']
-            lig_part_charge.append(sitei['species'][0]['oxidation_state'])
-        else:
-            slab_part_charges.append(sitei['species'][0]['oxidation_state'])
-            # calculate total charge transfers from bader
-    print "total sum: ", np.sum(total)
-    print "ligand sum: ", np.sum(lig_part_charge)
-    print "slab sum: ", np.sum(slab_part_charges)
-    SI = Scan_Interface(relaxed_oxidated_structure)
-    trial_structs, energies = SI.trial_interface()
-    dict_structs = dict(zip(energies, trial_structs))
-    # trial sorting --
-    print sorted(dict_structs)
-    # print trial_structs, energies
-    print trial_structs[0]
-    print energies[0]
+    print ("got oxidated structure.. starting optimization")
+    print (relaxed_oxidated_structure)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# #STEP 1 : Read Chargecar files from initial relaxation run **provide appropriate path to working directory
-
-#    print "Reading begins.."
-#    Vol_obj_1 = Chgcar.from_file("../AECCAR0")
-#    print "Read AECCAR0"
-#    Vol_obj_2 = Chgcar.from_file("../AECCAR2")
-#    print "Read AECCAR2"
-
-
-#   Chgcar_file = Chgcar.from_file("../CHGCAR")
-#   print "Read CHGCAR"
-
-
-
-#   Vol_obj_sum = Vol_obj_1.linear_add(Vol_obj_2)
-#   print "Added to charge sum writing charge sum"
-
-#   Vol_obj_sum.write_file("./Charge_sum")
-
-# STEP 2: Bader executable path ..run Bader
-#   exe = "~/Softwares/Bader/bader CHGCAR -ref Charge_sum"#"~/Softwares/Bader/bader ../CHGCAR -ref Charge_sum"
-
-#   os.system(exe)
-
-# STEP 3: Path to Bader ACF.dat
-#   path1 = "/home/josh/Research/Work/Direct_Solvation_Model/data/Raw_backup/PbS_Ligands_semiauto/PbS111_HOPO/Interface/Static/Bader_analysis/"
-#   print "Reading interface"
-#   BA_1 = Bader_Analysis(acf_path=path1+"/ACF.dat", chgcar_filename=path1+"../CHGCAR", potcar_filename= path1+"../POTCAR")
-# 111 R Slab
-#   print "decorated iface"
-#   strt_ox_iface = BA_1.get_oxidation_state_decorated_structure()
-#   print strt_ox_iface
-#   trans = strt_ox_iface.copy()
-# compute coulomb sums
-
-#   st = []
-# for i in strt_ox_iface.as_dict()['sites']:
-#     print i['species'][0]['element']
-#     st.append(i['species'][0]['oxidation_state'])
-# print np.sum(st)
-#   ce = ColoumbEnergy()
-#   direct_sum_energy=ce.get_energy(strt_ox_iface)
-#   bader_sum_energy=ce.get_bader_coulomb_energy(strt_ox_iface)
-#   ewald_energy = ce.get_ewald_sum(strt_ox_iface)
-#   print "ewald_energy: ", ewald_energy
-#   print "simple coulombic energy: ", direct_sum_energy
-#   print "bader coulombic energy: ", bader_sum_energy
-#   print "finished"
-# STEP 4: Scan ligand over interface for regions of lower potential [limits of x,y,z with step size]
-#   vec_list = []
-#   vec = []
-#   step = 0.01
-#   for i in range(0, 10):
-#       for j in range(0,10):
-#           for k in range(0,10):
-#               vec.append([i*step, j*step, -1*k*step])
-
-#   print strt_ox_iface.sites[0]
-#   dcoul = []
-#   bcoul = []
-#   for k,j in enumerate(vec):
-#       trans = strt_ox_iface.copy()
-#    	for i, sitei in enumerate(trans.frac_coords):
-#		if sitei[2]>0.65:  #gets ligand atoms to translate sites
-#			trans.translate_sites([i],j)
-# limit of atomic distances
-# 	if not trans.is_valid(tol = 1.0):
-#		print "possibly too close atoms"
-#	else:
-#		filename = "./PbS111_HOPO/POSCAR"+str(k)+".vasp"
-#		print filename, str(j)
-#		ewd=ce.get_ewald_sum(trans) 
-#		bcoulomb=ce.get_bader_coulomb_energy(trans)
-#		print "ewald sum= ", ewd
-#		print "bader coulomb sum= ", bcoulomb
-#		if ewd<ewald_energy:
-#			print "Lower energy"
-#			pos = Poscar(trans)
-#			pos.write_file(filename)
-
-
-###########	
-#	dcoul.append(ewd)
-
-#	bcoul.append(bcoulomb)
-#    plt.plot(dcoul, label='D-Coulomb')
-#    plt.plot(bcoul, label='B-Coulomb')
-# plt.plot(ewd, label='Ewald')
-#   plt.savefig('Coulomb_sums.png')
-
-
-# In[8]:
-
-
-
-
-# In[ ]:
