@@ -24,8 +24,11 @@ import subprocess as sp
 import logging
 from collections import OrderedDict, Counter
 import yaml
-
+from argparse import ArgumentParser
+from glob import glob
+import shutil as shu
 import numpy as np
+import pandas as pd
 
 from monty.json import MontyEncoder, MontyDecoder
 from monty.serialization import loadfn, dumpfn
@@ -34,22 +37,23 @@ from pymatgen.core.sites import PeriodicSite
 from pymatgen import Structure, Lattice, Element
 from pymatgen.core.surface import Slab, SlabGenerator
 from pymatgen.io.ase import AseAtomsAdaptor
-from pymatgen.io.vasp.inputs import Poscar
+from pymatgen.io.vasp.inputs import Incar,Poscar
 from pymatgen.core.composition import Composition
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import _pt_data
-from pymatgen.io.vasp.outputs import Vasprun
+from pymatgen.io.vasp.outputs import Vasprun, Oszicar
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.analysis.elasticity.strain import Strain,Deformation
 
 from custodian.custodian import Custodian
+from custodian.vasp.handlers import VaspErrorHandler
 
 from fireworks.user_objects.queue_adapters.common_adapter import CommonAdapter
 
-from ase.lattice.surface import surface
+from ase.build import surface
 
 from mpinterfaces.default_logger import get_default_logger
-from mpinterfaces import VASP_STD_BIN, QUEUE_SYSTEM, QUEUE_TEMPLATE, VASP_PSP,\
- PACKAGE_PATH
+from mpinterfaces import *
 
 __author__ = "Kiran Mathew, Joshua J. Gabriel, Michael Ashton"
 __copyright__ = "Copyright 2017, Henniggroup"
@@ -111,6 +115,56 @@ def slab_from_file(hkl, filename):
                 scale_factor=np.eye(3, dtype=np.int),
                 site_properties=slab_input.site_properties)
 
+
+def get_magmom_init(poscar,mag_init_file='mag_inits.yaml',is_spin_orbit=False):
+    """
+    Sets the mag init to ions found in the given poscar
+    according to the values given in the yaml file 
+    """
+    magmom = []
+    mag_init =0
+    mag_inits=[]
+    try:
+       if type(mag_init_file)==str:
+           print ('opening mag_init.yaml')
+           mag_inits = yaml.load(open(mag_init_file))
+       elif type(mag_init_file)==float:
+           print ('mag init float')
+           mag_init = mag_init_file
+       elif type(mag_init_file)==list and not is_spin_orbit:
+           magmom = mag_init_file
+    except:
+       logger.warn('mag_inits.yaml not found and manual initialization not specified,\
+                   so 0.5 is being used as initialization \
+                   for each element in your poscar file')
+       mag_inits = []
+       
+    sites_dict = poscar.as_dict()['structure']['sites']
+
+    print (poscar.comment,magmom)
+
+    if len(magmom) == len(sites_dict):
+       return magmom
+
+    for n, s in enumerate(sites_dict):
+
+        if s['label'] in mag_inits and not is_spin_orbit:
+            magmom.append(mag_inits[s['label']])
+        elif mag_init and not is_spin_orbit:
+            magmom.append(mag_init)
+        elif not is_spin_orbit:
+            magmom.append(0.5)
+        elif s['label'] in mag_inits and is_spin_orbit:
+            magmom += [mag_inits[s['label']] for i in [0,1,2]]
+        elif mag_init and is_spin_orbit:
+            magmom += [mag_init for i in [0,1,2]]
+        elif type(mag_init_file)==list and is_spin_orbit:
+            magmom += [mag_init_file[n] for i in [0,1,2]]
+        else:
+            magmom += [0.5 for i in [0,1,2]]
+    print (magmom)
+    return magmom
+    
 
 def get_magmom_string(structure):
     """
@@ -193,9 +247,15 @@ def get_magmom_afm(poscar, database=None):
     return afm_magmom, Poscar(structure=poscar.structure,
                               comment=orig_structure_name)
 
+def get_magmom_hunds(poscar):
+    """
+    returns an Incar magmom string according to the 
+    Hunds rule configuration of unpaired electrons
+    """
+    pass
 
 def get_run_cmmnd(nnodes=1, ntasks=16, walltime='10:00:00', job_bin=None,
-                  job_name=None, mem=None):
+                  job_name=None, mem=None, partition='hpg1-compute'):
     """
     returns the fireworks CommonAdapter based on the queue
     system specified by mpint_config.yaml and the submit
@@ -205,19 +265,29 @@ def get_run_cmmnd(nnodes=1, ntasks=16, walltime='10:00:00', job_bin=None,
     """
     d = {}
     job_cmd = None
-    try:
-       qtemp_file = open(QUEUE_TEMPLATE+'qtemplate.yaml')
-       qtemp = yaml.load(qtemp_file)
-       qtemp_file.close()
-    except:
-       # test case scenario
-       qtemp = {'account': None, 'mem': None, \
-        'walltime': '10:00:00', 'nodes': 1, 'pre_rocket': None, 'job_name': None, \
-        'ntasks': 16, 'email': None, 'rocket_launch': None}
-    qtemp.update({'nodes': nnodes, 'ntasks':ntasks, 'walltime': walltime, \
+    qtemp_file = open(QUEUE_TEMPLATE+os.sep+'qtemplate.yaml')
+    qtemp = yaml.load(qtemp_file)
+    qtemp_file.close()
+    qtemp.update({'nnodes': nnodes, 'ntasks':ntasks, 'walltime': walltime, \
                   'rocket_launch': job_bin, 'job_name':job_name,'mem':mem})
     # SLURM queue
     if QUEUE_SYSTEM == 'slurm':
+        qtemp['ntasks_per_node'] = int(qtemp['ntasks']/qtemp['nnodes'])
+        # say nnodes = 1, gives ntasks_per_node = 32, divide into 16 per socket
+        # say nnodes = 2, gives ntasks_per_node = 16, divide into 8 per socket
+        # say nnodes = 4, gives ntasks_per_node = 8, divide into 4 per socket
+
+        if qtemp['partition'] == 'hpg1-compute':
+            qtemp['ntasks_per_socket'] = int(qtemp['ntasks_per_node']/4)
+
+        elif qtemp['partition'] == 'hpg2-compute':
+            qtemp['ntasks_per_socket'] = int(qtemp['ntasks_per_node']/2)
+
+        else:
+            del qtemp['partition']
+
+        print ('Q DONE')
+
         if job_bin is None:
             job_bin = VASP_STD_BIN
         else:
@@ -235,7 +305,6 @@ def get_run_cmmnd(nnodes=1, ntasks=16, walltime='10:00:00', job_bin=None,
     else:
         job_cmd = ['ls', '-lt']
     if d:
-        #print (CommonAdapter(d['type'], **d['params']), job_cmd)
         return (CommonAdapter(d['type'], **d['params']), job_cmd)
     else:
         return (None, job_cmd)
@@ -259,23 +328,27 @@ def get_job_state(job):
         except:
             logger.info('Job {} not in the que'.format(job.job_id))
             state = "00"
-        ofname = "FW_job.out"
+        err_file = glob(job.job_dir+os.sep+'*.error')[-1]
+        out_file = err_file.split('.')[0] + '.out'
 
     # slurm
     elif QUEUE_SYSTEM == 'slurm':
         try:
-            output = sp.check_output(['squeue', '--job', job.job_id])
+            output = str(sp.check_output(['squeue', '--job', job.job_id]))
             state = output.rstrip('\n').split('\n')[-1].split()[-4]
         except:
             logger.info('Job {} not in the que.'.format(job.job_id))
             logger.info(
                 'This could mean either the batchsystem crashed(highly unlikely) or the job completed a long time ago')
             state = "00"
-        ofname = "vasp_job-" + str(job.job_id) + ".out"
+        err_file = glob(job.job_dir+os.sep+'*.error')[-1]
+        out_file = err_file.split('.')[0] + '.out'
+
 
     # no batch system
     else:
         state = 'XX'
+        ofname = 'MPInt_Job.out'
     return state, ofname
 
 
@@ -368,6 +441,153 @@ def jobs_from_file(filename='calibrate.json'):
         all_jobs.append(job)
     return all_jobs
 
+def continue_job_inputs(chkpt_files=None, old_job_dir=None, user_filters=None,\
+                     rerun_nonconverged_also=False):
+   """
+   utility function for any workflow that can be used to decide which
+   materials pass to the next stage of a workflow
+   """
+   if chkpt_files:
+      # Fuel source from checkpoint files
+      rerun_paths = []
+      chkpts = sum( [ jobs_from_file(j) for j in \
+                    [chks for chks in chkpt_files]], []  )
+
+      all_converged = [ (j.parent_job_dir+os.sep+j.job_dir,\
+        j.job_dir.split('/')[-1].split('_')[0],\
+        j.job_dir.split('/')[-1].split('_')[-1])\
+        for j in chkpts if j.final_energy ]
+
+      restarts = [ (j.parent_job_dir+os.sep+j.job_dir,\
+        j.job_dir.split('/')[-1].split('_')[0],\
+        j.job_dir.split('/')[-1].split('_')[-1])\
+        for j in chkpts if not j.final_energy ]
+
+      if user_filters:
+           # filter based on compound and structure name tags
+           # can be on more involved factors like % of jobs done in the step
+           filtered_run = user_filters#yaml.load(open(user_filters))
+           all_jobs = chkpts
+           #print (list(filtered_run.keys()))
+           converged = [p[0] for p in all_converged]
+           if 'Completion' in list(filtered_run.keys()):
+               if len(converged)/len(all_jobs) > filtered_run['Completion']:
+                   rerun_paths = converged
+               else:
+                   print ('{0} of jobs in step {1} not complete yet'\
+                           .format(filtered_run['Completion'], c))
+           elif 'Condition' in list(filtered_run.keys()):
+               script = filtered_run['Condition']
+               p = subprocess.Popen(['python',script, '-i', converged], \
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+               stdout, stderr = p.communicate()
+               if stdout: 
+                  rerun_paths = stdout
+               else:
+                  print ('Condition in {0} not met by any job in {1}'.format(script, c))    
+           elif 'Dir' in list(filtered_run.keys()):
+               rerun_paths = filtered_run['Dir']
+               print (rerun_paths)
+
+                   
+#           for (job_path, compound, structure) in all_converged:
+#              for f in filtered_run.keys():
+#                 for s in filtered_run[f]:
+#                    if f == compound and s == structure:
+#                       rerun_paths.append(job_path)
+      else:
+          rerun_paths = [p[0] for p in all_converged]
+
+   elif old_job_dir:
+       # Fuel source from list of directories
+       rerun_paths = old_job_dirs
+
+   if rerun_nonconverged_also:
+       return rerun_paths, restarts
+   else:
+       return rerun_paths
+
+def check_job_with_custodian(handlers,logfile,job=None,jdir=None):
+    """
+    function which checks a given checkpoint job
+    or a job directory for errors and performs
+    either just in time correction (writes STOPCAR to a job
+    that is running with errors and re-submits to the queue
+    with a corrected input set.
+    or correction
+    """
+    corrected={'ErrorDir':[],'Error':[],'Correction':[]}
+    if job:
+      j = job
+      with open(j.parent_job_dir+os.sep+j.job_dir+os.sep+j.output_file) as w:
+        j_num= w.read()
+      w.close()
+      ofiles = glob(j.parent_job_dir+os.sep+j.job_dir+os.sep+'*-*.out')
+      if len(ofiles)>1:
+         j_nums = [int(o.replace('.out','').split('-')[-1]) for o in ofiles]
+         j_num = max(j_nums)
+         print (j_num)
+      out_file = '-'.join([j.vis.qadapter['job_name'],str(j_num)]) + '.out'
+      err_file = '-'.join([j.vis.qadapter['job_name'],str(j_num)]) + '.error'
+      print (out_file)
+      output_path = j.parent_job_dir+os.sep+j.job_dir
+      if os.path.exists(output_path+os.sep+out_file):
+        for h in handlers:
+           h.output_filename = out_file
+           os.chdir(j.job_dir)
+           try:
+               if h.check():
+                   logfile.info('Making correction to {0} \n \
+                               and detected errors are {1} \n \
+                               Custodian correction is {2}'.\
+                           format(output_path,h.errors, h.correct()))
+                   #logfile.info('Detected errors are: {}'.format(h.errors))
+                   #logfile.info('Correction from Custodian is {}'.format(h.correct()))
+                   corrected['ErrorDir'].append(output_path)
+                   corrected['Error'].append(h.errors)
+                   corrected['Correction'].append(h.correct())
+               else:
+                   if 'Exceeded job memory' in sp.run(['tail', '-n2', err_file], stdout=sp.PIPE).stdout.decode('utf-8'):
+                      logfile.info('Memory Error {}'.format(output_path))
+                      corrected['ErrorDir'].append(output_path)
+                      corrected['Error'].append('Memory Error')
+                      corrected['Correction'].append('Change Memory settings for qparams')
+                   elif 'Walltime' in sp.run(['tail', '-n2', err_file], stdout=sp.PIPE).stdout.decode('utf-8'):
+                      logfile.info('Walltime exceeded {}'.format(output_path))
+                      corrected['ErrorDir'].append(output_path)
+                      corrected['Error'].append('Walltime Exceeded')
+                      corrected['Correction'].append('Copy CONTCAR to POSCAR and Update the Walltime')
+                   else:
+                      logfile.info('Error with no Custodian Correction found {} printing last 5 lines of err and out file'.format(output_path))
+                      print ('Here')
+                      errf = sp.run(['tail', '-n5', err_file],stdout=sp.PIPE).stdout.decode('utf-8')
+                      outf = 'Job {}\n'.format(str(j_num)) + sp.run(['tail', '-n10', out_file],stdout=sp.PIPE).stdout.decode('utf-8') 
+                      corrected['ErrorDir'].append(output_path)
+                      corrected['Error'].append({'out':outf,'err':errf})
+                      corrected['Correction'].append('Check Directory')
+                      print (corrected)
+           except:
+                 print (print_exception())
+                 logfile.info('Custodian encountered an error')
+                 corrected['ErrorDir'].append(output_path)
+                 corrected['Error'].append(sp.run(['tail', '-n2', err_file], stdout=sp.PIPE).stdout.decode('utf-8'))
+                 corrected['Correction'].append('XX')
+
+           os.chdir(j.parent_job_dir)
+      else:
+        logfile.warn('File does not exist: {}'.format(output_path+os.sep+out_file))
+
+      if corrected:
+          return corrected
+      else:
+          return None
+
+    elif jdir:
+      pass
+
+    else:
+      logger.warn('No job or job directory specified for custodian to check...')
+      return None
 
 def launch_daemon(steps, interval, handlers=None, ld_logger=None):
     """
@@ -1116,6 +1336,175 @@ def update_submission_template(default_template, qtemplate):
     """
     pass
 
+def check_errors(chkfile=None,logfile_name=None,jdirs=None,handlers=None):
+    """
+    Manual function to help check errors in job dirs
+    of a checkpoint file or in a list of job dirs
+    directly
+    """
+    logf = get_logger(logfile_name)
+    if not handlers:
+       handlers = [VaspErrorHandler()]
+
+    if chkfile:
+        js = update_checkpoint(jfile=chkfile)
+        chk_jobs = [j for j in jobs_from_file(chkfile) if not j.final_energy]
+        err_chks = [check_job_with_custodian(job=j,logfile=logf,handlers=handlers) for j in chk_jobs]
+        return err_chks
+    elif jdirs:
+        pass
+
+def rerun_jobs(job_cmd=None, chkfiles=None, job_dirs=None):
+    """
+    Reruns the jobs after performing corrections by Custodian
+    reading jobs either from checkpoint file (recommended)
+    or job directories.
+    """
+    logR = get_logger('RerunJobReport')
+    if chkfiles:
+        checks  = [check_errors(chkfile=f) for f in chkfiles]
+        CustodianReport = {'ErrorDir':[c['ErrorDir'][0] for c in sum(checks,[])],
+                           'Error':[c['Error'][0] for c in sum(checks,[])],
+                           'Correction':[c['Correction'][0] for c in sum(checks,[])]}
+        pd.DataFrame(CustodianReport).to_csv('CustodianReport.csv')
+        logR.info('Checks result is: {}'.format(checks))
+        jobs = sum([jobs_from_file(f) for f in glob('*.json')],[])
+        not_done_jobs = [j.job_dir for j in jobs if not j.final_energy]
+        logR.info('There are {0} Not done jobs and they are {1}'.format(len(not_done_jobs),not_done_jobs))
+        if job_cmd:
+            for j in np.unique(not_done_jobs):
+                os.chdir(j)
+                os.system(job_cmd)
+                os.chdir('../')
+    if job_dirs:
+        pass
+
+def process_to_dataframe(identifiers, metadata = ['energy','volume','kpoints'], chkfiles=glob('*.json'),job_dirs=None):
+    """
+    utility function that processes data from a list of checkpoints
+    or directories into a pandas dataframe
+
+    identifiers: Creates file names for the dataframes
+                 1. dict type: job directory concatenation
+                example: {0:(('_',0),('/',1)),1:('__',1),'JoinBy':'_','OtherNames':'PBE'}
+                         will split the job_dirs elements by
+                         '_' and take position 0 followed by a split by '__' take
+                         position 1
+
+    """
+    if chkfiles:
+       chk_jobs = sum([jobs_from_file(c) for c in chkfiles],[])
+       energies = [j.final_energy for j in chk_jobs]
+
+       if type(identifiers)==dict:
+
+           def rec_split(string, split_rule):
+               print (split_rule)
+               for s in split_rule:
+                   print (s)
+                   string = string.split(s[0])[s[1]]
+               return string
+
+           dir_names = [j.job_dir for j in chk_jobs]
+           print (list(identifiers.keys()))
+           print (identifiers[0])
+           dir_splits = [ [rec_split(d,identifiers[k]) for k in list(identifiers.keys()) \
+                         if type(k)==int] for d in dir_names]
+           dir_identifiers = [ identifiers['JoinBy'].join(d) for d in dir_splits]
+           print (dir_identifiers)
+
+def parse_script():
+    """
+    parser for output post processing
+    """
+    description = 'Input the checkpoint file or a list of directories enclosed in [..] or as a python glob'
+    user_parser = ArgumentParser(description=description)
+
+    user_parser.add_argument('-i', '--input', help='Input json file or a list of directories, see command man')
+    user_parser.add_argument('-o', '--output', help='Output data file name in csv')
+    if '.json' in sys.argv[2]:
+        jdirs = [j.parent_job_dir + os.sep + j.job_dir \
+                 for j in jobs_from_file(sys.argv[2]) if j.final_energy]
+        print (len(jdirs),'out of',len([j.parent_job_dir + os.sep + j.job_dir \
+                                       for j in jobs_from_file(sys.argv[2])]))
+    elif 'glob(' in sys.argv[2]:
+        jdirs = glob('{}*'.format(sys.argv[2].replace('glob(', '').replace(')','')))
+    elif '[' in sys.argv[2]:
+        jdirs = sys.argv[2].replace('[','').replace(']','').split(',')
+    else:
+        jdirs = sys.argv[2]
+
+    output = sys.argv[4]
+
+    return jdirs, output
+
+def parse_material_input():
+    """
+    general parser for material inputs, takes a source API and 
+    a MATERIALS_LIST.txt file. 
+    """
+    structures = []
+    description = 'Input the MATERIALS_LIST.txt and a source. Default is Materials Project API'
+    user_parser = ArgumentParser(description=description)
+
+    user_parser.add_argument('-m', '--materials', help='Input MATERIALS_LIST.txt')
+    user_parser.add_argument('-a', '--api', help='Source: MPAPI or MWAPI supported')
+    if '.txt' in sys.argv[2]:
+        materials_file = open(sys.argv[2])
+        materials = [m for m in materials_file.readlines()]
+        if not materials:
+           logger.warn('Materials not read from {}'.format(sys.argv[2]))
+    else:
+        logger.warn('Please supply an input file ending with .txt')
+    if sys.argv[4]:
+       api = sys.argv[4]
+    else:
+       api = 'MPAPI'
+
+    if api == 'MPAPI':
+       for m in materials:
+          if not 'mp' in m:
+             print ('querying {}'.format(m))
+             structures.append(get_struct_from_mp(m))
+          else:
+             pass
+    elif api == 'MWAPI':
+       for m in materials:
+          if 'mw' in m:
+             structures.append(get_struct_from_mw(m))
+          else:
+             pass
+
+    return structures
+          
+def load_config_vars(config_dict):
+    """
+    Loads the given dict of config variables to the environment
+    """
+    if not os.path.exists(SETTINGS_FILE):
+       user_configs = {key:None for key in ['username','bulk_binary','twod_binary',\
+               'sol_binary','ncl_binary','custom_binary',\
+               'vdw_kernel','potentials','MAPI_KEY', 'queue_system', 'queue_template']}
+
+       user_configs['queue_system'] = 'slurm'
+       user_configs['queue_template'] = PACKAGE_PATH
+
+       with open(os.path.join(os.path.expanduser('~'),'.mpint_config.yaml'),'w') as config_file:
+          yaml.dump(user_configs, config_file, default_flow_style=False)
+
+    current_config = yaml.load(open(SETTINGS_FILE))
+    current_config.update(config_dict)
+    with open(SETTINGS_FILE,'w') as new_config:
+       yaml.dump(current_config, new_config, default_flow_style=False)
+
+    if os.path.exists(PACKAGE_PATH):
+       print ('updating the Fireworks template file for the batch submission script based on the \n'\
+               'the available qtemplate params in {}'.format(PACKAGE_PATH+'/qtemplate.yaml'))
+       fireworks_path = PACKAGE_PATH.replace('/mpinterfaces','/fireworks/user_objects/')
+       for f in glob(PACKAGE_PATH+'/*.txt'):
+          os.system('cp {0} {1}'.format(f, fireworks_path))
+ 
+
 def write_pbs_runjob(name, nnodes, nprocessors, pmem, walltime, binary):
     """
     writes a runjob based on a name, nnodes, nprocessors, walltime,
@@ -1179,3 +1568,104 @@ def write_slurm_runjob(name, ntasks, pmem, walltime, binary):
     runjob.write('mpirun {} > job.log\n\n'.format(binary))
     runjob.write('echo \'Done.\'\n')
     runjob.close()
+
+def add_mem_submit_file(orig_file,pmem,qtype='slurm'):
+    #print ('adding memory')
+    #print (orig_file)
+    runjob = open(orig_file,'r')
+    orig_lines = [l for l in runjob.readlines() if 'mem-per-cpu' not in l]
+    non_queue_lines = [l for l in orig_lines if '#SBATCH' not in l]
+    queue_lines = [l for l in orig_lines if '#SBATCH' in l]
+    runjob.close()
+    with open(orig_file,'w') as runjob:
+       runjob.write(non_queue_lines[0])
+       for l in queue_lines:
+          runjob.write(l)
+       if QUEUE_SYSTEM=='slurm':
+          runjob.write('#SBATCH --mem-per-cpu={}'.format(pmem))
+       elif QUEUE_SYSTEM=='pbs':
+          runjob.write('#PBS --mem-per-cpu={}'.format(pmem))
+       for l in non_queue_lines[1:]:
+          runjob.write(l)
+    runjob.close()
+
+def add_walltime(orig_file,walltime):
+    print ('adding walltime')
+    runjob = open(orig_file,'r')
+    job_path = orig_file.replace('/submit_script','')
+    shu.copy(job_path+os.sep+'CONTCAR',job_path+os.sep+'POSCAR')
+    orig_lines = [l for l in runjob.readlines() if 'walltime' or 'time' not in l]
+    runjob.close()
+    non_queue_lines = [l for l in orig_lines if '#SBATCH' or '#PBS' not in l]
+    queue_lines = [l for l in orig_lines if '#SBATCH' or '#PBS' in l]
+    runjob.close()
+    with open(orig_file,'w') as runjob:
+       runjob.write(non_queue_lines[0])
+       for l in queue_lines:
+          runjob.write(l)
+       if QUEUE_SYSTEM=='slurm':
+          runjob.write('#SBATCH --walltime={}'.format(walltime))
+       elif QUEUE_SYSTEM=='pbs':
+          runjob.write('#PBS --walltime={}'.format(walltime))
+       for l in non_queue_lines[1:]:
+          runjob.write(l)
+    runjob.close()
+
+def decode_log_file(logfile):                
+    jdirs = []
+    jids = []
+    jname = []
+    with open(logfile, 'r') as read_file:
+       w_read = read_file.readlines()
+       for l in w_read:
+             if 'running job' in l:
+                j_line = l.split(' ')
+                w_pos_j  = [n for n,w in enumerate(j_line) if 'job' in w]
+                jids.append(j_line[w_pos_j[0]+1])
+                try:
+                   jname.append(j_line[w_pos_j[0]+2])
+                   jdirs.append(j_line[w_pos_j[0]+4].replace('\n',''))
+                except:
+                   jdirs.append(j_line[w_pos_j[0]+3].replace('\n',''))
+    return len(jids),jids,jdirs,jname 
+
+def decode_q(jid,jdir):
+    if QUEUE_SYSTEM == 'slurm':
+        try:
+            output = str(sp.check_output(['squeue', '--job', jid]))
+            state = output.rstrip('\n').split('\n')[-1].split()[-4]
+        except:
+            state = "00"
+        if state == 'R' or state == 'CG':
+            oszi = Oszicar(jdir+os.sep+'OSZICAR')
+            nsw = Incar.from_file(jdir+os.sep+'INCAR')['NSW']
+            return state, oszi, nsw
+        elif state == 'PD':
+            return 'PD', 'no OSZICAR yet','no nsw'
+        else:
+            nsw = Incar.from_file(jdir+os.sep+'INCAR')['NSW']
+            try:
+               oszi = Oszicar(jdir+os.sep+'OSZICAR')
+               #nsw = Incar.from_file(jdir+os.sep+'INCAR')['NSW']
+               return state, oszi, nsw
+            except:
+               return state, 'Failed OSZICAR', nsw
+
+def get_defo_structure(struct,strain=0.001,strain_direction='N11'):
+    idty = np.zeros((3,3),dtype=float)
+
+    idty[0][0] = 1.0
+    idty[1][1] = 1.0
+    idty[2][2] = 1.0
+
+    si = {'N11':(0,0),'N22':(1,1),'N33':(2,2)}
+    si_c = si[strain_direction]
+    idty[si_c[0]][si_c[1]] += strain
+
+    defo_grad = idty
+    d = Deformation(defo_grad)
+    defo_struct = d.apply_to_structure(struct)
+
+    return Poscar(defo_struct,comment=str(strain).replace('.','_'))
+
+

@@ -10,6 +10,7 @@ The instrument module:
 defines the inputset and the job
 
 """
+import sys
 import os
 import shutil
 import subprocess
@@ -40,7 +41,7 @@ __email__ = "joshgabriel92@gmail.com"
 __status__ = "Production"
 __date__ = "March 3, 2017"
 
-logger = get_default_logger(__name__)
+logger = get_default_logger('Project')#get_default_logger(__name__)
 
 
 class MPINTVaspInputSet(DictSet):
@@ -59,12 +60,14 @@ class MPINTVaspInputSet(DictSet):
         """
         self.name = name
         self.test = test
+        #print (test)
         self.incar_init = Incar.from_dict(incar.as_dict())
         self.poscar_init = Poscar.from_dict(poscar.as_dict())
         if not self.test:
             self.potcar_init = Potcar.from_dict(potcar.as_dict())
         if not isinstance(kpoints, str):
             self.kpoints_init = Kpoints.from_dict(kpoints.as_dict())
+            #print (kpoints)
         else:
             self.kpoints_init = kpoints
         self.reuse_path = reuse_path  # complete reuse paths
@@ -83,6 +86,7 @@ class MPINTVaspInputSet(DictSet):
         # dict(zip(self.potcar.as_dict()['symbols'],
         # self.potcar.as_dict()['symbols']))
         if not isinstance(kpoints, str):
+            #print (self.kpoints_init)
             config_dict['KPOINTS'] = self.kpoints_init.as_dict()
         else:
             # need to find a way to dictify this kpoints string more
@@ -105,6 +109,7 @@ class MPINTVaspInputSet(DictSet):
         """
         d = job_dir
         if make_dir_if_not_present and not os.path.exists(d):
+            #print ('creating job dir')
             os.makedirs(d)
         self.logger.info('writing inputset to : ' + d)
         self.incar_init.write_file(os.path.join(d, 'INCAR'))
@@ -131,6 +136,24 @@ class MPINTVaspInputSet(DictSet):
 
         if self.qadapter is not None:
             with open(os.path.join(d, self.script_name), 'w') as f:
+          
+                jdir_list = job_dir.replace('/','___').split('__')
+                #print ('Here',job_dir)
+                if not jdir_list:
+                    jdir_list = job_dir.replace('/','___').split('___')
+                    #print (jdir_list)
+                pj = [n for n,j in enumerate(jdir_list) if 'POS' in j] + ['']
+                kj = [n for n,j in enumerate(jdir_list) if 'KPTS' in j] + ['']
+                fj = [n for n,j in enumerate(jdir_list) if 'PBE' or 'LDA' in j] + ['']
+                try:
+                    #print (jdir_list)
+                    jname = '_'.join([jdir_list[pj[0]+1],jdir_list[kj[0]+1],jdir_list[fj[0]]])
+                except:
+                    jname = '_'.join(jdir_list)
+                self.qadapter['job_name'] = jname
+                #'_'.join([job_dir.split('__')[-1].replace(\
+                #'/','_').replace('POS',''), job_dir.split('__')[0].replace('/','_').\
+                #                   replace('POS','')])
                 queue_script = self.qadapter.get_script_str(job_dir)
                 f.write(queue_script)
 
@@ -165,8 +188,8 @@ class MPINTVaspInputSet(DictSet):
         if d["qadapter"] is not None:
             qadapter = CommonAdapter.from_dict(d["qadapter"])
         script_name = d["script_name"]
-        return MPINTVaspInputSet(d["name"], incar, poscar, potcar,
-                                 kpoints, qadapter,
+        return MPINTVaspInputSet(d["name"], incar, poscar, kpoints,
+                                 potcar, qadapter,
                                  script_name=script_name,
                                  vis_logger=logging.getLogger(d["logger"]),
                                  **d["kwargs"])
@@ -223,7 +246,7 @@ class MPINTJob(Job):
         parent job directory
         """
         os.chdir(os.path.abspath(self.job_dir))
-        self.logger.info('running in : ' + self.job_dir)
+        #self.logger.info('running in : ' + self.job_dir)
         p = None
         # if launching jobs via batch system
         if self.vis.qadapter is not None:
@@ -235,8 +258,9 @@ class MPINTJob(Job):
                 p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE)
                 stdout, stderr = p.communicate()
-                self.job_id = stdout.rstrip('\n').split()[-1]
+                self.job_id = str(stdout).rstrip('\n').split()[-1].replace("\\n'",'')#stdout.rstrip('\n').split()[-1]
                 f.write(self.job_id)
+                self.logger.info('running job {0} {1} in {2}'.format(self.job_id, self.vis.qadapter['job_name'], self.job_dir))
         else:
             cmd = list(self.job_cmd)
             with open(self.output_file, 'w') as f:

@@ -51,7 +51,7 @@ from monty.serialization import dumpfn
 from mpinterfaces.instrument import MPINTVaspInputSet, MPINTVaspJob
 from mpinterfaces.interface import Interface, Ligand
 from mpinterfaces.utils import get_ase_slab, get_magmom_string, get_magmom_afm, \
-    get_magmom_mae, print_exception
+    get_magmom_mae, get_magmom_init, print_exception,get_defo_structure
 from mpinterfaces.mat2d.electronic_structure import get_2D_hse_kpoints,\
     get_2D_incar_hse_prep, get_2D_incar_hse
 from mpinterfaces.default_logger import get_default_logger
@@ -80,12 +80,13 @@ class Calibrate(MSONable):
                  is_matrix=False, Grid_type='A',
                  parent_job_dir='.', job_dir='Job',
                  qadapter=None, job_cmd='qsub', wait=True,
-                 mappings_override=None, functional="PBE",
+                 mappings_override=None, pseudopotential="PBE",
                  database=None, magnetism=None, mag_init=None, reuse=None,
                  reuse_override=None, reuse_incar=None, solvation=None,
                  turn_knobs=OrderedDict([('ENCUT', []),
                                          ('KPOINTS', [])]),
-                 checkpoint_file=None, finer_kpoint=None, cal_logger=None):
+                 checkpoint_file=None, finer_kpoint=None, cal_logger=None,
+                 test=False,incar_remove=None):
         """
         Calibrate constructor
 
@@ -114,7 +115,7 @@ class Calibrate(MSONable):
                 corresponding values
             mappings_override (dict): override symbol mapping in potcar
                                eg:- {'S':'S_sv'}
-            functional (str): exchange-correlation functional
+            pseudopotential (str): pseudopotential set
             database (str): A work in progress, will be a database_name.yaml
                             file for defaults specific to a database workflow
                             that will have defaults for
@@ -167,9 +168,10 @@ class Calibrate(MSONable):
         self.incar = incar
         self.poscar = poscar
         self.potcar = potcar
+        self.test = test
         if poscar:
             self.potcar = Potcar(symbols=poscar.site_symbols,
-                                 functional=functional)
+                                 functional=pseudopotential)
         self.kpoints = kpoints
         if incar:
             self.incar_orig = incar.as_dict()
@@ -203,10 +205,11 @@ class Calibrate(MSONable):
         self.solvation = solvation
         self.reuse = reuse
         self.reuse_incar = reuse_incar
+        self.incar_remove = incar_remove
         self.reuse_override = reuse_override
         self.reuse_paths = None  # list object communicated to instrument
         self.finer_kpoint = finer_kpoint
-        self.functional = functional
+        self.pseudopotential = pseudopotential
         self.checkpoint_file = checkpoint_file
         if cal_logger:
             self.logger = cal_logger
@@ -242,16 +245,29 @@ class Calibrate(MSONable):
             turn_knobs = self.turn_knobs
         if any(turn_knobs.values()):
             for k, v in turn_knobs.items():
-                if k == 'KPOINTS' and v:
+                if k == 'POSCAR' and v:
+                    if 'VOLUME' in list(self.turn_knobs.keys()):
+                       self.setup_poscar_jobs(scale_list=self.turn_knobs['VOLUME'],\
+                                              poscar_list=v)
+                       del self.turn_knobs['VOLUME']
+                    elif 'STRAINS' in list(self.turn_knobs.keys()):
+                       self.setup_poscar_jobs(scale_list=self.turn_knobs['STRAINS'],\
+                                             poscar_list=v)
+                       del self.turn_knobs['STRAINS']
+                    else:
+                       self.setup_poscar_jobs(poscar_list=v)
+                elif k == 'KPOINTS' and v:
                     self.setup_kpoints_jobs(kpoints_list=v)
                 elif k == 'VOLUME' and v:
                     self.setup_poscar_jobs(scale_list=v)
+                elif k == 'STRAINS' and v:
+                    self.setup_poscar_jobs(scale_list=v)
                 elif k == 'POTCAR' and v:
                     self.setup_potcar_jobs(mappings=v, functional_list=None)
-                elif k == 'POTCAR_functional' and v:
-                    self.setup_potcar_jobs(mappings=None, functional_list=v)
-                elif k == 'POSCAR' and v:
-                    self.setup_poscar_jobs(poscar_list=v)
+                elif k == 'POTCAR_pseudopotential' and v:
+                    self.setup_potcar_jobs(mappings=None,functional_list=v)
+                elif k == 'FUNCTIONAL' and v:
+                    self.setup_incar_jobs(k,v)
                 else:
                     self.setup_incar_jobs(k, v)
         else:
@@ -268,9 +284,15 @@ class Calibrate(MSONable):
         job_dir = self.job_dir
         n_items = len(list(self.turn_knobs.items()))
         keys = list(self.turn_knobs.keys())
-        self._setup(turn_knobs=dict([(keys[0],
-                                      self.turn_knobs[keys[0]])]))
-        self.recursive_jobs(n_items, keys, 0)
+        #print (keys)
+        if 'POSCAR' in keys and 'STRAINS' in keys and len(keys)==2:
+             self._setup(turn_knobs=dict([('POSCAR',
+                                      self.turn_knobs['POSCAR'])]))
+        else:
+             #print ('Else here', keys[0])
+             #self._setup(turn_knobs=dict([(keys[0],
+             #                         self.turn_knobs[keys[0]])]))             
+             self.recursive_jobs(n_items, keys, 0)
         # restore
         self.job_dir = orig_job_dir
 
@@ -287,8 +309,16 @@ class Calibrate(MSONable):
         #### Testing ####
         # Orig
         # job_dir = self.job_dir + os.sep + self.key_to_name(keys[i])
-        job_dir = '__'.join(
+        #print (n)
+        #print (i)
+        #print (self.job_dir)
+        #print (keys[i])
+        try:
+          job_dir = '__'.join(
             [self.job_dir.split('/')[-1], self.key_to_name(keys[i])])
+        except:
+          job_dir = '__'.join(
+            [self.job_dir.split('__')[-1], self.key_to_name(keys[i])])
         #### Testing ####
         if i == n - 1 and i != 0:
             for val in self.turn_knobs[keys[i]]:
@@ -298,11 +328,21 @@ class Calibrate(MSONable):
                 self.logger.info(
                     'setting jobs in the directory: ' + self.job_dir)
                 self._setup(turn_knobs=dict([(keys[i], [val])]))
+                #print ('add job for ',self.job_dir, val, keys[i])
                 self.add_job(name=job_dir, job_dir=self.job_dir)
+        elif i==0 and len(list(self.turn_knobs.keys()))==1:
+            ## should be case iff when POSCAR and poscar transform are called together
+            for val in self.turn_knobs[keys[i]]:
+                self.job_dir = '__'.join([job_dir, self.val_to_name(val)])
+                self.logger.info(
+                    'setting jobs in the directory: ' + self.job_dir)
+                self._setup(turn_knobs=dict([(keys[i], [val])]))
+                #self.add_job(name=job_dir, job_dir=self.job_dir)
         else:
             for val in self.turn_knobs[keys[i]]:
                 ##
                 ## self.job_dir = job_dir + os.sep + self.val_to_name(val)
+                #print ('comes here with',self.job_dir)
                 self.job_dir = '__'.join([job_dir, self.val_to_name(val)])
                 self.logger.info(
                     'setting jobs in the directory: ' + self.job_dir)
@@ -322,7 +362,7 @@ class Calibrate(MSONable):
         """
         if key == 'KPOINTS':
             return 'KPTS'
-        elif key == 'POTCAR_map' or key == 'POTCAR_functional':
+        elif key == 'POTCAR_map' or key == 'POTCAR_pseudopotential':
             return 'POT'
         elif key == 'POSCAR':
             return 'POS'
@@ -355,9 +395,9 @@ class Calibrate(MSONable):
         elif isinstance(val, dict):
             return self.potcar_to_name(mapping=val)
         elif isinstance(val, Poscar):
-            name = str(val.structure.composition.reduced_formula) \
-                + '_' + str(int(val.structure.lattice.volume)) \
-                + '_' + ''.join((val.comment).split())
+            name = ''.join((val.comment).split()) + '_'+ \
+                str(val.structure.composition.reduced_formula)
+                #+ '_' + str(int(val.structure.lattice.volume))
             return name.replace('\\', '_').replace('(', '_').replace(')', '_')
         else:
             return str(val)
@@ -380,15 +420,15 @@ class Calibrate(MSONable):
         else:
             return str(kpoint)
 
-    def potcar_to_name(self, mapping=None, functional=None):
+    def potcar_to_name(self, mapping=None, pseudopotential=None):
         """
-        convert a symbol mapping and functional to a name that
+        convert a symbol mapping and pseudopotential to a name that
         can be used for setting up the potcar jobs
 
          Args:
              mapping: example:- if mapping = {'Pt':'Pt_pv',
                  'Si':'Si_GW'} then the name will be PBE_Pt_pv_Si_GW
-                  with self.functional="PBE"
+                  with self.pseudopotential="PBE"
 
         Returns:
             string
@@ -399,13 +439,45 @@ class Calibrate(MSONable):
         elif functional:
             return '_'.join(functional)
         else:
-            return '_'.join(self.functional)
+            return '_'.join(self.pseudopotential)
 
     def set_incar(self, param, val):
         """
         set the incar paramter, param = val
         """
+        print (param, val)
         self.incar[param] = val
+        #print (self.incar)
+
+    def set_functional(self,val):
+            """
+            """
+            if val == 'PBE':
+               print ('PBE')
+               self.logger.info('setting PBE as functional')
+            elif val == 'PBEsol':
+               print ('PS')
+               self.logger.info('setting PBEsol as functional')
+               func_dict = {'GGA':'PS'}
+               self.incar.update(func_dict)
+            elif val == 'vdW-OPTB88':
+               print ('vdW')
+               self.logger.info('setting vdW-OPTB88 as functional')
+               func_dict = {\
+              'AGGAC': 0.0,
+              'GGA': 'BO',
+              'LUSE_VDW': True,
+              'PARAM1': 0.1833333333,
+              'PARAM2': 0.22}
+               self.incar.update(func_dict)
+            elif val == 'SCAN':
+               print ('SCAN')
+               self.logger.info('setting vdW-OPTB88 as functional')
+               func_dict = {\
+               'METAGGA': 'SCAN'}
+               self.incar.update(func_dict)
+            print (self.incar)
+
 
     def set_poscar(self, scale=None, poscar=None):
         """
@@ -420,14 +492,27 @@ class Calibrate(MSONable):
            set the poscar: volume scaled by the scale factor
         """
         if scale is not None:
-            structure = Poscar.from_dict(self.poscar_orig).structure
-            volume = structure.volume
-            structure.scale_lattice(scale * volume)
-            self.poscar = Poscar(structure)
+            try:
+                structure = self.poscar.structure
+            except:
+                print (print_exception())
+                structure = Poscar.from_dict(self.poscar_orig).structure
+            # case 1 volume scaling of poscar
+            #try:
+            if type(scale)!=list:
+               volume = structure.volume
+               structure.scale_lattice(scale[1] * volume)
+               self.poscar=Poscar(structure,comment='Volume_{}'.format(scale))
+            elif scale[0]=='N11' or scale[0]=='N22':
+               self.poscar=\
+                 get_defo_structure(structure,strain=scale[1],strain_direction=scale[0])
+            #except:
+            #  print (print_exception())
+            #  sys.exit()
         elif poscar is not None:
             self.poscar = poscar
 
-    def set_potcar(self, mapping=None, functional='PBE'):
+    def set_potcar(self, mapping=None, pseudopotential='PBE'):
         """
         set the potcar: symbol to potcar type mapping
         """
@@ -444,10 +529,11 @@ class Calibrate(MSONable):
                     mapped_symbols.append(sym)
         else:
             mapped_symbols = symbols
-        if functional:
-            func = functional
+        if pseudopotential in ['PBE','LDA']:
+            func = pseudopotential
         else:
-            func = self.functional
+            func = self.pseudopotential
+        print ('setting potcar from', mapped_symbols)
         self.potcar = Potcar(symbols=mapped_symbols,
                              functional=func)
 
@@ -493,10 +579,19 @@ class Calibrate(MSONable):
 
             elif self.Grid_type == 'Finer_G_Mesh':
                 # kpoint is the scaling factor and self.kpoints is the old kpoint mesh
-                self.logger.info('Setting Finer G Mesh for {0} by scale {1}'.format(kpoint, self.finer_kpoint))
+                self.logger.info('Setting Finer G Mesh for {0} by scale {1}'.
+                format(kpoint, self.finer_kpoint))
                 self.kpoints = Kpoints.gamma_automatic(kpts = \
                    [i * self.finer_kpoint for i in kpoint])
                 self.logger.info('Finished scaling operation of k-mesh')
+
+            elif self.Grid_type == 'TwoD':
+                self.kpoints = Kpoints.automatic_density(structure=poscar.structure,kppa=kpoint)
+                kpoint_dict = self.kpoints.as_dict()
+                kpoint_dict['kpoints'][0][2] = 1  # remove z kpoints
+                self.kpoints = Kpoints.from_dict(kpoint_dict)
+            elif self.Grid_type == 'DG':
+                self.kpoints = Kpoints.automatic_gamma_density(structure=poscar.structure,kppa=kpoint)                
 
         # applicable for database runs
         # future constructs or settinsg can be activated via a yaml file
@@ -549,7 +644,7 @@ class Calibrate(MSONable):
             val_list: List of values to vary for the param
         """
 
-        if val_list != ['2D_default']:
+        if val_list != ['2D_default'] and param!='FUNCTIONAL':
             for val in val_list:
                 self.logger.info('setting INCAR parameter ' + param + ' = '
                                  + str(val))
@@ -558,6 +653,10 @@ class Calibrate(MSONable):
                     job_dir = self.job_dir + os.sep + \
                         param + os.sep + self.val_to_name(val)
                     self.add_job(name=job_dir, job_dir=job_dir)
+                   # print ('add job called')
+        elif param == 'FUNCTIONAL':
+            for val in val_list:
+                self.set_functional(val)
         else:
             self.logger.warn('incar list empty')
 
@@ -575,6 +674,7 @@ class Calibrate(MSONable):
                         + os.sep + self.kpoint_to_name(kpoint,
                                                        self.Grid_type)
                     self.add_job(name=job_dir, job_dir=job_dir)
+                    #print ('add job called')
         else:
             self.logger.warn('kpoints_list empty')
 
@@ -583,7 +683,9 @@ class Calibrate(MSONable):
         for scaling the latice vectors of the original structure,
         scale_list is volume scaling factor list
         """
-        if scale_list:
+        incar_init = self.incar
+        incar_remove = self.incar_remove
+        if scale_list and not poscar_list:
             for scale in scale_list:
                 self.set_poscar(scale=scale)
                 self.set_potcar()
@@ -591,8 +693,13 @@ class Calibrate(MSONable):
                     job_dir = self.job_dir + os.sep + 'POS' + \
                         os.sep + 'VOLUME_' + str(scale)
                     self.add_job(name=job_dir, job_dir=job_dir)
+                    #print ('add job called')
         elif poscar_list:
+            if not scale_list:
+              scale_list = [[1.0]]
             for pos in poscar_list:
+              for n,scale in enumerate(scale_list):
+                print ('setting volume scaling to cell as ', scale)
                 # if it is a twod_database run or any general standard database run,
                 # the incar, kpoints and potcar follow a standard input set
                 # which will be activated by the twod_database tag set to true
@@ -604,7 +711,8 @@ class Calibrate(MSONable):
                 # based on the chosen functional, cutoff
                 # so self.incar is a vdW incar for re-relaxation in vdW, gga for every
                 # other calculation or LDA+U for LSDA+U calculations
-                incar_dict = self.incar.as_dict()
+                incar_dict = incar_init
+                #print (incar_dict)
                 if self.reuse:
                     # if this is a true list minimally, ['CONTCAR']
                     # it is to be ensured that the poscar list is a
@@ -618,7 +726,22 @@ class Calibrate(MSONable):
                     # copy a CHGCAR or WAVECAR or both perhaps
                     try:
                         # first setup of POSCAR initial, INCAR, KPOINTS
-                        poscar = Poscar.from_file(pos + os.sep + 'CONTCAR')
+                        self.poscar = Poscar.from_file(pos + os.sep + 'CONTCAR')
+                        self.set_poscar(scale=scale)
+                        #print ('Transform',scale)
+                        if scale_list[0] == 1.0 and len(scale_list)==1:
+                              self.job_dir = pos.split('/')[-1]
+                        else:
+                             # think that transform is unnecessary
+                             #self.job_dir = pos.split('/')[-1]+'_TRANSFORM_'+\
+                             # str(scale).replace('.','_').replace("[",'').\
+                             # replace("]",'')
+                             self.job_dir = pos.split('/')[-1]+'_'+\
+                              self.kpoint_to_name(scale,grid_type='G')
+
+                        potcar = Potcar.from_file(pos + os.sep + 'POTCAR').as_dict()
+                        poscar = self.poscar
+                        #kpoints = Kpoints.from_file(pos+os.sep+'KPOINTS')
                         self.logger.info('Read previous relaxed CONTCAR file from {}'.
                                          format(pos))
                         # check if it is KPOINTS altering job like HSE
@@ -667,15 +790,30 @@ class Calibrate(MSONable):
                                 pos + os.sep + 'KPOINTS')
                             # decide on how to use incar, use same one or
                             # update or afresh
-                            if self.reuse_incar == 'old':
+                        if self.reuse_incar == 'old':
+                            # reuse same incar with no updates done to it
                                 incar_dict = Incar.from_file(
                                     pos + os.sep + 'INCAR').as_dict()
-                            elif self.reuse_incar == 'update':
-                                # way to go for cutoff updates, convergence, etc.
-                                # but retain the old functional
-                                incar_dict.update(Incar.from_file(pos + os.sep + 'INCAR').
-                                                  as_dict())
-                            else:
+                        elif self.reuse_incar == 'update':
+                                # reuse same incar but with updates done to it
+                                self.logger.info('updating incar at {}'.format(pos))
+                                incar_dict_init = Incar.from_file(pos + os.sep + 'INCAR')
+                                #print ('Reading INCAR from directory ', incar_dict_init)
+                                #print ('What should be updating', incar_dict)
+                                incar_dict_init.update(incar_dict)
+                                incar_dict = incar_dict_init
+                                #print ('Final update')
+                                #print (incar_dict)
+                        elif self.reuse_incar == 'update_remove':
+                                self.logger.info('updating incar at {}'.format(pos))
+                                incar_dict_init = Incar.from_file(pos + os.sep + 'INCAR')
+                                print (incar_dict_init)
+                                incar_dict_init.update(incar_dict)
+                                for i in self.incar_remove:
+                                    print (i)
+                                    del incar_dict_init[i]
+                                incar_dict = incar_dict_init
+                        else:
                                 # use a fresh incar as specified by the init
                                 # way to go for example for LDAU or other
                                 # major removals done to INCAR
@@ -689,13 +827,15 @@ class Calibrate(MSONable):
                                     incar_dict = incar_dict
 
                         if isinstance(self.reuse, list):
+                            # for files to be reused: example CHGCAR, WAVECAR, etc.
                             reuse_paths = [
                                 pos + os.sep + r for r in self.reuse]
                             self.reuse_paths = reuse_paths
+
                         # Magnetism use cases, updates to be made to the INCAR (MAE)
                         # and poscar (AFM)
                         # MAE and AFM
-
+                        #print ('Here')
                         if self.magnetism == 'MAE':
 
                             # remove vdW tags for MAE calculations
@@ -737,11 +877,40 @@ class Calibrate(MSONable):
                             self.logger.info(
                                 'updating INCAR and POSCAR for AFM calculation')
                             afm, poscar = get_magmom_afm(poscar, self.database)
+                            self.set_poscar(poscar=poscar)
                             incar_dict.update({'MAGMOM': afm})
+
+                        elif self.magnetism == 'Relaxed':
+                            self.logger.info(
+                                'updating INCAR with the total magnetization obtained in the relaxed state')
+                            try:
+                                out_mag = Outcar(
+                                pos + os.sep + 'OUTCAR')
+                                if out_mag.magnetization:
+                                    #print ('reading tot')
+                                    self.mag_init = [i['tot'] for i in out_mag.magnetization]
+                                else:
+                                    #print ('reading total mag')
+                                    mag_tot = out_mag.total_mag
+                                    self.mag_init  = mag_tot/len(poscar.structure.sites)
+                                incar_dict.update({'MAGMOM':get_magmom_init(poscar, self.mag_init)})
+                            except:
+                                self.logger.info('no mag relaxed')
+
+                        elif self.magnetism == 'Remove':
+                             try:
+                               del incar_dict['MAGMOM']
+                               incar_dict.update({'ISPIN':1})
+                               self.logger.info('Removed magnetism settings')
+                             except:
+                               self.logger.info('No previous magnetism settings')
+
+                            
                     except:
                         # check what to do if the previous calculation being reused is not
                         # actuall done .. system exit or adopt a user override
                         # with POSCAR
+                        print (print_exception())
                         self.logger.warn(
                             'Empty relaxed CONTCAR file .. Probably job not done')
                         if not self.reuse_override:
@@ -752,6 +921,7 @@ class Calibrate(MSONable):
                             self.logger.info('Using old Poscar for rerun')
                             poscar = Poscar.from_file(pos + os.sep + 'POSCAR')
 
+                    self.incar = Incar.from_dict(incar_dict)
                 # case for non - reuse
                 else:
                     poscar = pos
@@ -760,14 +930,38 @@ class Calibrate(MSONable):
                         incar_dict.update(
                             {'MAGMOM': get_magmom_string(poscar)})
                         self.set_kpoints(poscar=poscar)
-                    self.incar = Incar.from_dict(incar_dict)
+                    #self.incar = Incar.from_dict(incar_dict)
 
-                self.set_poscar(poscar=poscar)
-                self.set_potcar()
+                    # Long term solution for magmom initialization
+                    if self.magnetism == 'Init_by_file':
+                        self.logger.info('Updating magmom from input mag_inits.yaml')
+                        if 'LSORBIT' in list(incar_dict.keys()):
+                            magmom = get_magmom_init(poscar,is_spin_orbit=True)
+                        else:
+                            magmom = get_magmom_init(poscar)
+                        incar_dict.update({'MAGMOM': magmom})
+
+                    elif self.magnetism == 'General_Init':
+                        self.logger.info('Updating magmom with transition metal as 6.0 \
+                                          everything else as 0.5')
+                        incar_dict.update(\
+                            {'MAGMOM': get_magmom_string(poscar.structure),\
+                            'ISPIN': 2})
+                    self.incar = Incar.from_dict(incar_dict)
+                    self.poscar = poscar
+                #self.set_poscar(poscar=poscar)
+                if not self.reuse:
+                   self.set_potcar()
+                else:
+                   self.potcar = Potcar.from_dict(potcar)
                 if not self.is_matrix:
                     job_dir = self.job_dir + os.sep + 'POS' + \
                         os.sep + self.val_to_name(poscar)
                     self.add_job(name=job_dir, job_dir=job_dir)
+                elif self.is_matrix and scale_list[0]!=[1.0]:
+                    #print ('adding poscar and volume job')
+                    self.add_job(name=self.job_dir, job_dir=self.job_dir)
+                #print ('set job dir', self.job_dir)
 
     def setup_potcar_jobs(self, mappings, functional_list):
         """
@@ -775,7 +969,7 @@ class Calibrate(MSONable):
         """
         if functional_list:
             for func in functional_list:
-                self.set_potcar(functional=func)
+                self.set_potcar(pseudopotential=func)
                 if not self.is_matrix:
                     job_dir = self.job_dir + os.sep \
                         + self.key_to_name('POTCAR') \
@@ -796,10 +990,11 @@ class Calibrate(MSONable):
         add a single job using the current incar, poscar, potcar and
         kpoints
         """
+        #print ('call add job')
         vis = MPINTVaspInputSet(name, self.incar, self.poscar,
-                                self.potcar, self.kpoints,
+                                self.kpoints, self.potcar,
                                 self.qadapter, vis_logger=self.logger,
-                                reuse_path=self.reuse_paths)
+                                reuse_path=self.reuse_paths, test=self.test)
         # the job command can be overrridden in the run method
         job = MPINTVaspJob(self.job_cmd, name=name, final=True,
                            parent_job_dir=self.parent_job_dir,
@@ -892,7 +1087,7 @@ class CalibrateMolecule(Calibrate):
                  parent_job_dir='.',
                  job_dir='./Molecule', qadapter=None,
                  job_cmd='qsub', wait=True,
-                 mappings_override=None, functional="PBE",
+                 mappings_override=None, pseudopotential="PBE",
                  turn_knobs={'ENCUT': [], 'KPOINTS': []},
                  checkpoint_file=None, cal_logger=None):
         Calibrate.__init__(self, incar, poscar, potcar, kpoints,
@@ -902,7 +1097,7 @@ class CalibrateMolecule(Calibrate):
                            job_dir=job_dir, qadapter=qadapter,
                            job_cmd=job_cmd, wait=wait,
                            mappings_override=mappings_override,
-                           functional=functional,
+                           pseudopotential=pseudopotential,
                            turn_knobs=turn_knobs,
                            checkpoint_file=checkpoint_file,
                            cal_logger=cal_logger)
@@ -926,9 +1121,9 @@ class CalibrateBulk(Calibrate):
                  parent_job_dir='.',
                  job_dir='./Bulk', qadapter=None,
                  job_cmd='qsub', wait=True,
-                 mappings_override=None, functional="PBE",
+                 mappings_override=None, pseudopotential="PBE",
                  turn_knobs={'ENCUT': [], 'KPOINTS': []},
-                 checkpoint_file=None, cal_logger=None):
+                 checkpoint_file=None, cal_logger=None, test=False):
         Calibrate.__init__(self, incar, poscar, potcar, kpoints,
                            system=system, is_matrix=is_matrix,
                            Grid_type=Grid_type,
@@ -936,10 +1131,10 @@ class CalibrateBulk(Calibrate):
                            job_dir=job_dir, qadapter=qadapter,
                            job_cmd=job_cmd, wait=wait,
                            mappings_override=mappings_override,
-                           functional=functional,
+                           pseudopotential=pseudopotential,
                            turn_knobs=OrderedDict(turn_knobs),
                            checkpoint_file=checkpoint_file,
-                           cal_logger=cal_logger)
+                           cal_logger=cal_logger, test=test)
 
 
 class CalibrateSlab(Calibrate):
@@ -951,10 +1146,10 @@ class CalibrateSlab(Calibrate):
                  is_matrix=False, Grid_type='A',
                  parent_job_dir='.', job_dir='./Slab',
                  qadapter=None, job_cmd='qsub', wait=True,
-                 mappings_override=None, functional="PBE",
+                 mappings_override=None, pseudopotential="PBE",
                  turn_knobs={'VACUUM': [], 'THICKNESS': []},
                  from_ase=False, checkpoint_file=None,
-                 cal_logger=None):
+                 cal_logger=None, test=False):
         self.from_ase = from_ase
         self.is_matrix = is_matrix
         self.system = system
@@ -967,10 +1162,10 @@ class CalibrateSlab(Calibrate):
                            job_dir=job_dir, qadapter=qadapter,
                            job_cmd=job_cmd, wait=wait,
                            mappings_override=mappings_override,
-                           functional=functional,
+                           pseudopotential=pseudopotential,
                            turn_knobs=turn_knobs,
                            checkpoint_file=checkpoint_file,
-                           cal_logger=cal_logger)
+                           cal_logger=cal_logger, test=test)
 
     def slab_setup(self, turn_knobs=None):
         """
@@ -1084,7 +1279,7 @@ class CalibrateInterface(CalibrateSlab):
                  is_matrix=False, Grid_type='A',
                  parent_job_dir='.', job_dir='./Interface',
                  qadapter=None, job_cmd='qsub', wait=True,
-                 mappings_override=None, functional="PBE",
+                 mappings_override=None, pseudopotential="PBE",
                  turn_knobs={'VACUUM': [], 'THICKNESS': []},
                  from_ase=False, checkpoint_file=None,
                  cal_logger=None):
@@ -1095,7 +1290,7 @@ class CalibrateInterface(CalibrateSlab):
                                job_dir=job_dir, qadapter=qadapter,
                                job_cmd=job_cmd, wait=wait,
                                mappings_override=mappings_override,
-                               functional=functional,
+                               pseudopotential=pseudopotential,
                                turn_knobs=turn_knobs,
                                from_ase=from_ase,
                                checkpoint_file=checkpoint_file,
@@ -1173,6 +1368,6 @@ if __name__ == '__main__':
                         system=system,
                         is_matrix=is_matrix,
                         job_dir=job_dir,
-                        turn_knobs=turn_knobs)
+                        turn_knobs=turn_knobs, test=True)
     cal.setup()
     cal.run(job_cmd)
