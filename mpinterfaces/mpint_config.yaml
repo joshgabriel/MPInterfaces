@@ -1,0 +1,12 @@
+MAPI_KEY: null
+MW_KEY: null
+bulk_binary: null
+custom_binary: null
+ncl_binary: null
+potentials: null
+queue_system: null # pbs slurm supported
+queue_template: null
+sol_binary: null
+twod_binary: null
+username: null
+vdw_kernel: null
