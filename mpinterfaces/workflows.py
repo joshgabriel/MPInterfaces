@@ -43,11 +43,15 @@ vasp_config = {'twod_binary': VASP_TWOD_BIN,
                'custom_binary': VASP_CUSTOM_BIN}
 
 
-
+print ('current vasp binaries are: ', vasp_config)
 try:
    POTCAR_SPEC = yaml.load(open('potcar_symbols.yaml'))
 except:
-   POTCAR_SPEC = yaml.load(open(PACKAGE_PATH+os.sep+'potcar_symbols.yaml'))
+   try:
+      POTCAR_SPEC = yaml.load(open(PACKAGE_PATH+os.sep+'potcar_symbols.yaml'))
+   except:
+      POTCAR_SPEC = None
+      warnings.warn('specify a potcar_spec before starting calculations')
 
 ### STEP 1#####
 def StepVASP0(my_project, struct_list,order_key=0):

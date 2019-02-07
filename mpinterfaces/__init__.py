@@ -21,11 +21,18 @@ __version__ = "1.7.0"
 
 PACKAGE_PATH = os.path.dirname(__file__)
 
-try:
-    MPINT_CONFIG = loadfn(os.path.join(PACKAGE_PATH, 'mpint_config.yaml'))
-except:
-    MPINT_CONFIG = {}
-    warnings.warn('mpint_config.yaml file not configured.')
+if os.path.exists(os.path.expanduser('~')+'/.mpint_config.yaml'):
+   MPINT_CONFIG = loadfn(os.path.expanduser('~')+'/.mpint_config.yaml')
+elif os.path.exists(os.path.join(PACKAGE_PATH, 'mpint_config.yaml')):
+   MPINT_CONFIG = loadfn(os.path.join(PACKAGE_PATH, 'mpint_config.yaml'))
+else:
+   MPINT_CONFIG = {}
+   warnings.warn('mpint_config.yaml file not configured')
+#try:
+#    MPINT_CONFIG = loadfn('~/.mpint_config.yaml')
+#except:
+#    MPINT_CONFIG = {}
+#    warnings.warn('mpint_config.yaml file not configured')
 
 # set environ variables for MAPI_KEY and VASP_PSP_DIR
 if MPINT_CONFIG.get('potentials', ''):
@@ -38,6 +45,9 @@ MPR = MPRester(MP_API)
 USERNAME = MPINT_CONFIG.get('username', None)
 VASP_STD_BIN = MPINT_CONFIG.get('normal_binary', None)
 VASP_TWOD_BIN = MPINT_CONFIG.get('twod_binary', None)
+VASP_NCL_BIN = MPINT_CONFIG.get('ncl_binary',None)
+VASP_SOL_BIN = MPINT_CONFIG.get('sol_binary',None)
+VASP_CUSTOM_BIN = MPINT_CONFIG.get('custom_binary',None)
 VDW_KERNEL = MPINT_CONFIG.get('vdw_kernel', None)
 VASP_PSP = MPINT_CONFIG.get('potentials', None)
 QUEUE_SYSTEM = MPINT_CONFIG.get('queue_system', None)
