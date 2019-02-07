@@ -1,0 +1,66 @@
+Incar_General: # the general INCAR with a constant ENCUT and Exchange Correlation
+  AGGAC: 0.0
+  EDIFF: 1e-08
+  EDIFFG: -1e-03
+  ENCUT: 600
+  GGA: BO
+  IBRION: 2
+  ISIF: 3
+  ISMEAR: -5
+  LUESE_VDW: true
+  NSW: 100
+  PARAM1: 0.1833333333
+  PARAM2: 0.22
+Insilico_Fab:
+  Material_List:  # an example list of materials
+  - NaCl
+  - NaF
+NAME: vdW_OPTB88_compounds1 # Name of your project
+Potcar_Spec: potcar_symbols.yaml
+Workflow:
+  Control: 40 # interval for daemon-ized job monitoring
+  Error_Handlers: VaspErrorHandler() # which custodian error handler to use for all steps
+  Steps:
+    0:     # the zeroth step, this number also signifies which workflow step is performed first
+      PSEUODOPOTENTIAL: # Pseudopotential choice
+      - PBE
+      Kpt_Grid: D # which Kpoints grid density method: D is for Kpoints per atom 
+      - 5000
+      KPOINTS: # A list of KPOINTS densities to perform the calculation
+      - 5000
+      Magnetism: None
+      Matrix: true # Always set to true unless doing single test material runs
+      NAME: Relax # NAME of your workflow 
+      Other_Knobs: None
+      Queue:
+        Bin: bulk_binary # which binary to use 
+        Memory: 1000
+        Nnodes: 1
+        Ntasks: 16
+        Partition: hpg2-compute
+        Walltime: '10:00:00'
+      TYPE: StepVASP0
+    1:
+      Analysis:
+        Input: vdW_OPTB88_compounds1Elastic_Moduli.json # which checkpoint of directories to perform analysis on  
+        Script: analyze_example.py # an analysis script
+        Output: MyOutput # name of output file that will be written as a pandas csv
+      Continue:
+        Filter: null # an optional filter.yaml file to decide which jobs continue or not
+        Source:
+        - vdW_OPTB88_compounds1Relax.json  # which checkpoint file to start the step 1 one from
+      Incar_Update: # any changes to the INCAR for the next step 
+        IBRION: 6
+        NSW: 1
+      Kpt_Grid: D
+      Magnetism: None
+      NAME: Elastic_Moduli # Name of second step of workflow
+      Queue:
+        Bin: bulk_binary
+        Memory: 1000
+        Nnodes: 1
+        Ntasks: 16
+        Partition: hpg2-compute
+        Walltime: '10:00:00'
+      Reuse: null
+      TYPE: StepVASP1
