@@ -170,7 +170,11 @@ class Calibrate(MSONable):
         self.potcar = potcar
         self.test = test
         if poscar:
-            self.potcar = Potcar(symbols=poscar.site_symbols,
+            if mappings_overload:
+                maps = [mappings_overload[s] for s in poscar.site_symbols]
+            else:
+                maps = poscar.site_symbols
+            self.potcar = Potcar(symbols=maps,
                                  functional=pseudopotential)
         self.kpoints = kpoints
         if incar:
